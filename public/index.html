@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>건축 법규 검토</title>
   <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body>
   <main class="wrap">
@@ -15,6 +16,14 @@
 
     <section class="card">
       <h2>토지 정보 입력(수동)</h2>
+
+      <div class="actions" style="gap:8px; justify-content:flex-start; margin-bottom:12px;">
+        <input id="addr" type="text" placeholder="주소 입력 (예: 서울 강남구 테헤란로 152)" style="flex:1; min-width:240px;" />
+        <button id="addrBtn" class="ghost" type="button">주소로 좌표 확인</button>
+      </div>
+      <div id="addrResult" class="result" aria-live="polite"></div>    
+      <div id="map" style="height:280px; border-radius:14px; overflow:hidden; margin-top:10px;"></div>
+  
 
       <div class="grid">
         <label>
@@ -61,5 +70,6 @@
   </main>
 
   <script src="./script.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>
