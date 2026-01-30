@@ -24,6 +24,48 @@
       <div id="addrResult" class="result" aria-live="polite"></div>    
       <div id="map" style="height:280px; border-radius:14px; overflow:hidden; margin-top:10px;"></div>
   
+<!-- ✅ 용도지역 선택 영역 추가 -->
+<div class="actions" style="gap:8px; justify-content:flex-start; margin:12px 0;">
+  <label style="flex:1; min-width:240px;">
+    <span style="display:block; margin-bottom:6px;">용도지역(간이)</span>
+    <select id="zoning" style="width:100%;">
+      <option value="">선택하세요</option>
+    </select>
+  </label>
+
+  <button id="applyRuleBtn" class="ghost" type="button">룰 적용</button>
+</div>
+
+<div id="ruleHint" class="result" aria-live="polite"></div>
+
+<!-- ✅ 건축 용도 선택(간이) -->
+<div class="actions" style="gap:8px; justify-content:flex-start; margin:12px 0;">
+  <label style="flex:1; min-width:240px;">
+    <span style="display:block; margin-bottom:6px;">건축 용도(간이)</span>
+    <select id="useSelect" style="width:100%;">
+      <option value="">선택하세요</option>
+    </select>
+  </label>
+
+  <button id="checkUseBtn" class="ghost" type="button">용도 가능 여부</button>
+</div>
+
+<div id="useResult" class="result" aria-live="polite"></div>
+
+<!-- ✅ 조건부 체크리스트 표시 영역 -->
+<div id="checklistCard" class="result" style="display:none; margin-top:12px; border:1px dashed #444;">
+  <div style="font-weight:700; margin-bottom:8px;">⚠️ 조건부 검토 체크리스트</div>
+  <div id="checklistList"></div>
+</div>
+
+<!-- ✅ 요약 박스(자동 생성) -->
+<div id="summaryBox" class="result" aria-live="polite"></div>
+
+<div class="actions" style="gap:8px; justify-content:flex-start; margin-top:10px;">
+  <button id="summaryBtn" class="ghost" type="button">요약 만들기</button>
+  <button id="copySummaryBtn" class="ghost" type="button">요약 복사</button>
+</div>
+
 
       <div class="grid">
         <label>
@@ -69,7 +111,8 @@
     </footer>
   </main>
 
-  <script src="./script.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="./script.js"></script>
+  
 </body>
 </html>

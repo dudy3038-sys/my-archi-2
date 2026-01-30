@@ -1,0 +1,103 @@
+{
+  "version": "0.2.0",
+  "updated_at": "2026-01-30",
+  "notes": "초기 룰셋(상담용). 실제 적용은 지구단위/조례/기타 규제로 변동 가능.",
+  "uses_catalog": [
+    { "code": "RES_HOUSE", "label": "단독/다가구(주거)" },
+    { "code": "RES_MULTI", "label": "공동주택(간이)" },
+    { "code": "NEIGHBOR_1", "label": "제1종근린생활시설(간이)" },
+    { "code": "NEIGHBOR_2", "label": "제2종근린생활시설(간이)" },
+    { "code": "OFFICE", "label": "업무시설(간이)" }
+  ],
+  "rules": [
+    {
+      "id": "zoning-UR1",
+      "zoning": "제1종일반주거지역",
+      "bcr_max": 60,
+      "far_max": 200,
+      "use_rules": {
+        "allow": [
+          "단독주택",
+          "다세대주택",
+          "다가구주택",
+          "제1종근린생활시설(일반)"
+        ],
+        "deny": [
+          "공장",
+          "위험물시설",
+          "숙박시설"
+        ],
+        "notes": [
+          "※ 실제 허가는 주차/일조/지구단위계획/조례에 따라 달라질 수 있음"
+        ]
+      },
+    
+      "uses": {
+        "RES_HOUSE": "allow",
+        "RES_MULTI": "conditional",
+        "NEIGHBOR_1": "allow",
+        "NEIGHBOR_2": "conditional",
+        "OFFICE": "deny"
+      },
+      "source": {
+        "type": "seed",
+        "title": "초기 샘플(확인 필요)",
+        "ref": "TODO: 법령/조례 근거 링크"
+      }
+    },
+    {
+      "id": "zoning-UR2",
+      "zoning": "제2종일반주거지역",
+      "bcr_max": 60,
+      "far_max": 200,
+      "uses": {
+        "RES_HOUSE": "allow",
+        "RES_MULTI": "allow",
+        "NEIGHBOR_1": "allow",
+        "NEIGHBOR_2": "allow",
+        "OFFICE": "conditional"
+      },
+      "source": {
+        "type": "seed",
+        "title": "초기 샘플(확인 필요)",
+        "ref": "TODO"
+      }
+    },
+    {
+      "id": "zoning-UR3",
+      "zoning": "제3종일반주거지역",
+      "bcr_max": 50,
+      "far_max": 250,
+      "uses": {
+        "RES_HOUSE": "allow",
+        "RES_MULTI": "allow",
+        "NEIGHBOR_1": "allow",
+        "NEIGHBOR_2": "allow",
+        "OFFICE": "allow"
+      },
+      "source": {
+        "type": "seed",
+        "title": "초기 샘플(확인 필요)",
+        "ref": "TODO"
+      }
+    },
+    {
+      "id": "zoning-COMM",
+      "zoning": "일반상업지역",
+      "bcr_max": 80,
+      "far_max": 800,
+      "uses": {
+        "RES_HOUSE": "conditional",
+        "RES_MULTI": "conditional",
+        "NEIGHBOR_1": "allow",
+        "NEIGHBOR_2": "allow",
+        "OFFICE": "allow"
+      },
+      "source": {
+        "type": "seed",
+        "title": "초기 샘플(확인 필요)",
+        "ref": "TODO"
+      }
+    }
+  ]
+}
