@@ -8,5 +8,12 @@
     "rewrites": [
       { "source": "/api/**", "function": "api" }
     ]
+  },
+  "emulators": {
+    "hub": { "host": "127.0.0.1" },
+    "ui": { "host": "127.0.0.1" },
+    "logging": { "host": "127.0.0.1" },
+    "hosting": { "host": "127.0.0.1" },
+    "functions": { "host": "127.0.0.1" }
   }
 }

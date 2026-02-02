@@ -6,29 +6,45 @@
   --line:rgba(255,255,255,.12);
   --btn:#3b82f6;
   --btn2:rgba(255,255,255,.12);
+
+  /* 상태/강조 */
+  --good:#22c55e;
+  --warn:#f59e0b;
+  --bad:#ef4444;
+
+  /* ✅ 추가: 포커스/그림자/라운드 통일 */
+  --focus: rgba(59,130,246,.45);
+  --shadow: 0 16px 40px rgba(0,0,0,.35);
+  --radius:16px;
 }
 
 *{box-sizing:border-box}
+html, body{height:100%}
+
 body{
   margin:0;
   font-family: ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-  background: radial-gradient(900px 600px at 15% 10%, #1a2a57 0%, transparent 55%),
-              radial-gradient(900px 600px at 85% 20%, #173b2c 0%, transparent 55%),
-              var(--bg);
+  background:
+    radial-gradient(900px 600px at 15% 10%, #1a2a57 0%, transparent 55%),
+    radial-gradient(900px 600px at 85% 20%, #173b2c 0%, transparent 55%),
+    var(--bg);
   color:var(--text);
 }
 
 .wrap{max-width:920px; margin:0 auto; padding:28px 18px 60px}
-.header h1{margin:0; font-size:28px}
+
+.header h1{margin:0; font-size:28px; letter-spacing:-.2px}
 .sub{margin:8px 0 0; color:var(--muted)}
+
 .card{
   margin-top:18px;
   background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
   border:1px solid var(--line);
-  border-radius:16px;
+  border-radius:var(--radius);
   padding:18px;
-  box-shadow: 0 16px 40px rgba(0,0,0,.35);
+  box-shadow: var(--shadow);
 }
+
 h2{margin:0 0 12px; font-size:18px}
 .hint{margin:0 0 10px; color:var(--muted); font-size:13px}
 
@@ -37,8 +53,10 @@ h2{margin:0 0 12px; font-size:18px}
   grid-template-columns: repeat(2, minmax(0,1fr));
   gap:12px;
 }
+
 label span{display:block; font-size:13px; color:var(--muted); margin:0 0 6px}
-input, textarea{
+
+input, textarea, select{
   width:100%;
   border-radius:12px;
   border:1px solid var(--line);
@@ -46,9 +64,49 @@ input, textarea{
   color:var(--text);
   padding:12px 12px;
   outline:none;
+  transition: border-color .15s ease, box-shadow .15s ease, filter .15s ease;
 }
+
+/* ✅ 포커스 UX 개선 */
+input:focus, textarea:focus, select:focus{
+  border-color: rgba(59,130,246,.55);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+/* ✅ number input 스핀 버튼(크롬) 너무 튀는거 완화 */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button{
+  opacity:.6;
+}
+
+/* ✅ select 기본 스타일 보정 + 화살표 */
+select{
+  appearance:none;
+  -webkit-appearance:none;
+  -moz-appearance:none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(255,255,255,.55) 50%),
+    linear-gradient(135deg, rgba(255,255,255,.55) 50%, transparent 50%),
+    linear-gradient(to right, transparent, transparent);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 12px) 50%,
+    0 0;
+  background-size:6px 6px, 6px 6px, 100% 100%;
+  background-repeat:no-repeat;
+  padding-right:34px;
+}
+
 textarea{resize:vertical}
-.actions{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap}
+
+.actions{
+  display:flex;
+  gap:10px;
+  margin-top:12px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+
 button{
   border:0;
   border-radius:12px;
@@ -56,9 +114,25 @@ button{
   color:white;
   background:var(--btn);
   cursor:pointer;
-  font-weight:600;
+  font-weight:700;
+  transition: transform .05s ease, filter .15s ease, opacity .15s ease;
 }
-button.ghost{background:var(--btn2)}
+
+button.ghost{
+  background:var(--btn2);
+  border:1px solid var(--line);
+}
+
+button:active{transform: translateY(1px)}
+button:hover{filter:brightness(1.05)}
+
+/* 비활성 */
+button:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
+/* 결과 박스 */
 .result{
   margin-top:14px;
   padding:12px;
@@ -66,7 +140,46 @@ button.ghost{background:var(--btn2)}
   border:1px dashed var(--line);
   color:var(--text);
   min-height:52px;
+  background: rgba(0,0,0,.08);
 }
+
+/* ✅ 체크리스트 카드(조건부 영역) 가독성 업 */
+#checklistCard{
+  background: rgba(0,0,0,.10);
+}
+
+/* ✅ 체크리스트 항목 간격(스크립트가 inline style로 border-top 주긴 하지만, 전체 톤 보정) */
+#checklistList > div{
+  padding-top:12px;
+}
+
+/* ✅ 요약 박스 pre 가독성 */
+#summaryBox pre{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* ✅ 링크 스타일(법령 링크) */
+a{
+  color:#7ab7ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+a:hover{
+  filter:brightness(1.1);
+}
+
+/* ✅ Leaflet 지도: 카드 느낌에 맞게 테두리 톤 */
+#map{
+  border:1px solid rgba(255,255,255,.10);
+}
+
+/* ✅ 스크롤바(윈도우에서 너무 튀는 느낌 완화) */
+*::-webkit-scrollbar{height:10px; width:10px}
+*::-webkit-scrollbar-thumb{background: rgba(255,255,255,.18); border-radius:999px}
+*::-webkit-scrollbar-track{background: rgba(0,0,0,.12)}
+
 .footer{margin-top:14px; color:var(--muted)}
 
 @media (max-width:720px){

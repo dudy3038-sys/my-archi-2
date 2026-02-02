@@ -4,9 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>건축 법규 검토</title>
+
   <link rel="stylesheet" href="./style.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
+
 <body>
   <main class="wrap">
     <header class="header">
@@ -17,57 +19,71 @@
     <section class="card">
       <h2>토지 정보 입력(수동)</h2>
 
+      <!-- 주소 → 좌표 -->
       <div class="actions" style="gap:8px; justify-content:flex-start; margin-bottom:12px;">
-        <input id="addr" type="text" placeholder="주소 입력 (예: 서울 강남구 테헤란로 152)" style="flex:1; min-width:240px;" />
+        <input
+          id="addr"
+          type="text"
+          placeholder="주소 입력 (예: 서울 강남구 테헤란로 152)"
+          style="flex:1; min-width:240px;"
+        />
         <button id="addrBtn" class="ghost" type="button">주소로 좌표 확인</button>
       </div>
-      <div id="addrResult" class="result" aria-live="polite"></div>    
+
+      <div id="addrResult" class="result" aria-live="polite"></div>
       <div id="map" style="height:280px; border-radius:14px; overflow:hidden; margin-top:10px;"></div>
-  
-<!-- ✅ 용도지역 선택 영역 추가 -->
-<div class="actions" style="gap:8px; justify-content:flex-start; margin:12px 0;">
-  <label style="flex:1; min-width:240px;">
-    <span style="display:block; margin-bottom:6px;">용도지역(간이)</span>
-    <select id="zoning" style="width:100%;">
-      <option value="">선택하세요</option>
-    </select>
-  </label>
 
-  <button id="applyRuleBtn" class="ghost" type="button">룰 적용</button>
-</div>
+      <!-- 용도지역(간이) -->
+      <div class="actions" style="gap:8px; justify-content:flex-start; margin:12px 0;">
+        <label style="flex:1; min-width:240px;">
+          <span style="display:block; margin-bottom:6px;">용도지역(간이)</span>
+          <select id="zoning" style="width:100%;">
+            <option value="">선택하세요</option>
+          </select>
+        </label>
 
-<div id="ruleHint" class="result" aria-live="polite"></div>
+        <button id="applyRuleBtn" class="ghost" type="button">룰 적용</button>
+      </div>
 
-<!-- ✅ 건축 용도 선택(간이) -->
-<div class="actions" style="gap:8px; justify-content:flex-start; margin:12px 0;">
-  <label style="flex:1; min-width:240px;">
-    <span style="display:block; margin-bottom:6px;">건축 용도(간이)</span>
-    <select id="useSelect" style="width:100%;">
-      <option value="">선택하세요</option>
-    </select>
-  </label>
+      <div id="ruleHint" class="result" aria-live="polite"></div>
 
-  <button id="checkUseBtn" class="ghost" type="button">용도 가능 여부</button>
-</div>
+      <!-- 건축 용도(간이) -->
+      <div class="actions" style="gap:8px; justify-content:flex-start; margin:12px 0;">
+        <label style="flex:1; min-width:240px;">
+          <span style="display:block; margin-bottom:6px;">건축 용도(간이)</span>
+          <select id="useSelect" style="width:100%;">
+            <option value="">선택하세요</option>
+          </select>
+        </label>
 
-<div id="useResult" class="result" aria-live="polite"></div>
+        <button id="checkUseBtn" class="ghost" type="button">용도 가능 여부</button>
+      </div>
 
-<!-- ✅ 조건부 체크리스트 표시 영역 -->
-<div id="checklistCard" class="result" style="display:none; margin-top:12px; border:1px dashed #444;">
-  <div style="font-weight:700; margin-bottom:8px;">⚠️ 조건부 검토 체크리스트</div>
-  <div id="checklistList"></div>
-</div>
+      <div id="useResult" class="result" aria-live="polite"></div>
 
-<!-- ✅ 요약 박스(자동 생성) -->
-<div id="summaryBox" class="result" aria-live="polite"></div>
+      <!-- ✅ 체크리스트(allow/conditional/deny 공통) -->
+      <div id="checklistCard" class="result" style="display:none; margin-top:12px; border:1px dashed #444;">
+        <!-- ✅ 기존 "⚠️ 조건부..." 하드코딩 제거 -->
+        <!-- script.js가 checklistList 내부에 헤더(상태별 타이틀+접기버튼)를 생성함 -->
+        <div id="checklistList"></div>
 
-<div class="actions" style="gap:8px; justify-content:flex-start; margin-top:10px;">
-  <button id="summaryBtn" class="ghost" type="button">요약 만들기</button>
-  <button id="copySummaryBtn" class="ghost" type="button">요약 복사</button>
-</div>
+        <!-- 서버 판정 UI -->
+        <div class="actions" style="gap:8px; justify-content:flex-start; margin-top:10px;">
+          <button id="judgeServerBtn" class="ghost" type="button">서버로 전체 판정</button>
+          <div id="judgeServerHint" style="font-size:12px; opacity:.85;"></div>
+        </div>
+      </div>
 
+      <!-- 요약 -->
+      <div id="summaryBox" class="result" aria-live="polite"></div>
 
-      <div class="grid">
+      <div class="actions" style="gap:8px; justify-content:flex-start; margin-top:10px;">
+        <button id="summaryBtn" class="ghost" type="button">요약 만들기</button>
+        <button id="copySummaryBtn" class="ghost" type="button">요약 복사</button>
+      </div>
+
+      <!-- 기본 산정 입력 -->
+      <div class="grid" style="margin-top:14px;">
         <label>
           <span>대지면적 (㎡)</span>
           <input id="landArea" type="number" min="0" step="0.01" placeholder="예: 200" />
@@ -89,9 +105,9 @@
         </label>
       </div>
 
-      <div class="actions">
-        <button id="calcBtn">검토 결과 보기</button>
-        <button id="resetBtn" class="ghost">초기화</button>
+      <div class="actions" style="margin-top:12px;">
+        <button id="calcBtn" type="button">검토 결과 보기</button>
+        <button id="resetBtn" class="ghost" type="button">초기화</button>
       </div>
 
       <div id="result" class="result" aria-live="polite"></div>
@@ -100,9 +116,11 @@
     <section class="card">
       <h2>상담 멘트(자동 생성)</h2>
       <p class="hint">결과를 기반으로, 건축주에게 바로 설명할 문장으로 정리됩니다.</p>
+
       <textarea id="talkTrack" rows="8" placeholder="검토 결과를 먼저 계산해 주세요."></textarea>
+
       <div class="actions">
-        <button id="copyBtn" class="ghost">멘트 복사</button>
+        <button id="copyBtn" class="ghost" type="button">멘트 복사</button>
       </div>
     </section>
 
@@ -113,6 +131,5 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="./script.js"></script>
-  
 </body>
 </html>
