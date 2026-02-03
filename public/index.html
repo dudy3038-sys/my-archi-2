@@ -20,24 +20,24 @@
       <h2>토지 정보 입력(수동)</h2>
 
       <!-- 주소 → 좌표 -->
-      <div class="actions" style="gap:8px; justify-content:flex-start; margin-bottom:12px;">
+      <div class="actions actions--start actions--gap-sm actions--mb-sm">
         <input
           id="addr"
+          class="input-grow"
           type="text"
           placeholder="주소 입력 (예: 서울 강남구 테헤란로 152)"
-          style="flex:1; min-width:240px;"
         />
         <button id="addrBtn" class="ghost" type="button">주소로 좌표 확인</button>
       </div>
 
       <div id="addrResult" class="result" aria-live="polite"></div>
-      <div id="map" style="height:280px; border-radius:14px; overflow:hidden; margin-top:10px;"></div>
+      <div id="map" class="map"></div>
 
       <!-- 용도지역(간이) -->
-      <div class="actions" style="gap:8px; justify-content:flex-start; margin:12px 0;">
-        <label style="flex:1; min-width:240px;">
-          <span style="display:block; margin-bottom:6px;">용도지역(간이)</span>
-          <select id="zoning" style="width:100%;">
+      <div class="actions actions--start actions--gap-sm actions--my-sm">
+        <label class="field">
+          <span class="field__label">용도지역(간이)</span>
+          <select id="zoning" class="field__control">
             <option value="">선택하세요</option>
           </select>
         </label>
@@ -48,10 +48,10 @@
       <div id="ruleHint" class="result" aria-live="polite"></div>
 
       <!-- 건축 용도(간이) -->
-      <div class="actions" style="gap:8px; justify-content:flex-start; margin:12px 0;">
-        <label style="flex:1; min-width:240px;">
-          <span style="display:block; margin-bottom:6px;">건축 용도(간이)</span>
-          <select id="useSelect" style="width:100%;">
+      <div class="actions actions--start actions--gap-sm actions--my-sm">
+        <label class="field">
+          <span class="field__label">건축 용도(간이)</span>
+          <select id="useSelect" class="field__control">
             <option value="">선택하세요</option>
           </select>
         </label>
@@ -61,29 +61,33 @@
 
       <div id="useResult" class="result" aria-live="polite"></div>
 
-      <!-- ✅ 체크리스트(allow/conditional/deny 공통) -->
-      <div id="checklistCard" class="result" style="display:none; margin-top:12px; border:1px dashed #444;">
-        <!-- ✅ 기존 "⚠️ 조건부..." 하드코딩 제거 -->
-        <!-- script.js가 checklistList 내부에 헤더(상태별 타이틀+접기버튼)를 생성함 -->
-        <div id="checklistList"></div>
-
+      <!-- ✅ 체크리스트(allow/conditional/deny 공통)
+           - 초기에는 display:none만(클래스로 숨기지 않음: JS가 style.display를 제어) -->
+      <div id="checklistCard" class="checklistCard" style="display:none;">
         <!-- 서버 판정 UI -->
-        <div class="actions" style="gap:8px; justify-content:flex-start; margin-top:10px;">
+        <div class="actions actions--start actions--gap-sm actions--mt-sm checklistServerBar">
           <button id="judgeServerBtn" class="ghost" type="button">서버로 전체 판정</button>
-          <div id="judgeServerHint" style="font-size:12px; opacity:.85;"></div>
+          <div id="judgeServerHint" class="muted-sm"></div>
         </div>
+
+        <div class="muted-sm checklistNote">
+          ※ 참고: <code>/api/checklists/judge</code>는 <b>POST 전용</b>이라 주소창으로 열면
+          <code>Cannot GET</code>이 보일 수 있어요. 이 버튼/입력 변경이 자동으로 POST 호출을 수행합니다.
+        </div>
+
+        <div id="checklistList"></div>
       </div>
 
       <!-- 요약 -->
       <div id="summaryBox" class="result" aria-live="polite"></div>
 
-      <div class="actions" style="gap:8px; justify-content:flex-start; margin-top:10px;">
+      <div class="actions actions--start actions--gap-sm actions--mt-sm">
         <button id="summaryBtn" class="ghost" type="button">요약 만들기</button>
         <button id="copySummaryBtn" class="ghost" type="button">요약 복사</button>
       </div>
 
       <!-- 기본 산정 입력 -->
-      <div class="grid" style="margin-top:14px;">
+      <div class="grid grid--mt-md">
         <label>
           <span>대지면적 (㎡)</span>
           <input id="landArea" type="number" min="0" step="0.01" placeholder="예: 200" />
@@ -105,7 +109,7 @@
         </label>
       </div>
 
-      <div class="actions" style="margin-top:12px;">
+      <div class="actions actions--mt-sm">
         <button id="calcBtn" type="button">검토 결과 보기</button>
         <button id="resetBtn" class="ghost" type="button">초기화</button>
       </div>

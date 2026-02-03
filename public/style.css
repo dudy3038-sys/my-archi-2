@@ -12,7 +12,7 @@
   --warn:#f59e0b;
   --bad:#ef4444;
 
-  /* ✅ 추가: 포커스/그림자/라운드 통일 */
+  /* 포커스/그림자/라운드 통일 */
   --focus: rgba(59,130,246,.45);
   --shadow: 0 16px 40px rgba(0,0,0,.35);
   --radius:16px;
@@ -54,6 +54,9 @@ h2{margin:0 0 12px; font-size:18px}
   gap:12px;
 }
 
+/* ✅ index.html에서 새로 쓴 클래스들(인라인 제거용) */
+.grid--mt-md{ margin-top:14px; }
+
 label span{display:block; font-size:13px; color:var(--muted); margin:0 0 6px}
 
 input, textarea, select{
@@ -67,19 +70,25 @@ input, textarea, select{
   transition: border-color .15s ease, box-shadow .15s ease, filter .15s ease;
 }
 
-/* ✅ 포커스 UX 개선 */
+/* 포커스 UX 개선 */
 input:focus, textarea:focus, select:focus{
   border-color: rgba(59,130,246,.55);
   box-shadow: 0 0 0 3px var(--focus);
 }
 
-/* ✅ number input 스핀 버튼(크롬) 너무 튀는거 완화 */
+/* ✅ 누락 입력(missing) 상태: JS가 data-missing="1"만 세팅하면 CSS가 표현 */
+input[data-missing="1"]{
+  border-color: var(--bad) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .25) !important;
+}
+
+/* number input 스핀 버튼(크롬) 너무 튀는거 완화 */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button{
   opacity:.6;
 }
 
-/* ✅ select 기본 스타일 보정 + 화살표 */
+/* select 기본 스타일 보정 + 화살표 */
 select{
   appearance:none;
   -webkit-appearance:none;
@@ -99,12 +108,39 @@ select{
 
 textarea{resize:vertical}
 
+/* actions */
 .actions{
   display:flex;
   gap:10px;
   margin-top:12px;
   flex-wrap:wrap;
   align-items:center;
+}
+
+/* ✅ 인라인 제거용 유틸 클래스들 */
+.actions--start{ justify-content:flex-start; }
+.actions--gap-sm{ gap:8px; }
+.actions--mb-sm{ margin-bottom:12px; }
+.actions--my-sm{ margin:12px 0; }
+.actions--mt-sm{ margin-top:10px; }
+
+/* ✅ 주소 input이 화면에 맞게 늘어나도록 */
+.input-grow{
+  flex:1;
+  min-width:240px;
+}
+
+/* ✅ label+select(용도지역/용도) 레이아웃 통일 */
+.field{
+  flex:1;
+  min-width:240px;
+}
+.field__label{
+  display:block;
+  margin-bottom:6px;
+}
+.field__control{
+  width:100%;
 }
 
 button{
@@ -143,24 +179,74 @@ button:disabled{
   background: rgba(0,0,0,.08);
 }
 
-/* ✅ 체크리스트 카드(조건부 영역) 가독성 업 */
+/* ✅ 체크리스트 카드(공통) */
+.checklistCard{
+  margin-top:12px;
+  border:1px dashed var(--line);
+  background: rgba(0,0,0,.10);
+  border-radius: var(--radius);
+}
+
+/* ✅ 체크리스트 상단 서버판정 바/노트 (index.html 인라인 제거용) */
+.checklistServerBar{
+  margin-bottom:10px;
+}
+.checklistNote{
+  margin-bottom:12px;
+  line-height:1.45;
+}
+
+/* ✅ 초기 숨김용 클래스(표시/숨김은 JS가 style.display로도 제어) */
+.is-hidden{
+  display:none;
+}
+
+/* 기존 id 스타일도 유지 (호환용) */
 #checklistCard{
   background: rgba(0,0,0,.10);
 }
 
-/* ✅ 체크리스트 항목 간격(스크립트가 inline style로 border-top 주긴 하지만, 전체 톤 보정) */
+/* 체크리스트 항목 간격 */
 #checklistList > div{
   padding-top:12px;
 }
 
-/* ✅ 요약 박스 pre 가독성 */
+/* ✅ missing 힌트(“❗입력 필요 …”) 톤 통일 */
+.missing-hint{
+  margin-top:6px;
+  font-size:12px;
+  opacity:.95;
+  color: var(--bad);
+}
+
+/* ✅ judge hint 작은 텍스트 */
+.muted-sm{
+  font-size:12px;
+  opacity:.85;
+}
+
+/* ✅ 지도 영역: 인라인 제거용 */
+.map{
+  height:280px;
+  border-radius:14px;
+  overflow:hidden;
+  margin-top:10px;
+  border:1px solid rgba(255,255,255,.10);
+}
+
+/* 기존 #map 테두리(혹시 남아있어도 동일 톤) */
+#map{
+  border:1px solid rgba(255,255,255,.10);
+}
+
+/* 요약 박스 pre 가독성 */
 #summaryBox pre{
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 13px;
   line-height: 1.55;
 }
 
-/* ✅ 링크 스타일(법령 링크) */
+/* 링크 스타일(법령 링크) */
 a{
   color:#7ab7ff;
   text-decoration: underline;
@@ -170,12 +256,7 @@ a:hover{
   filter:brightness(1.1);
 }
 
-/* ✅ Leaflet 지도: 카드 느낌에 맞게 테두리 톤 */
-#map{
-  border:1px solid rgba(255,255,255,.10);
-}
-
-/* ✅ 스크롤바(윈도우에서 너무 튀는 느낌 완화) */
+/* 스크롤바(윈도우에서 너무 튀는 느낌 완화) */
 *::-webkit-scrollbar{height:10px; width:10px}
 *::-webkit-scrollbar-thumb{background: rgba(255,255,255,.18); border-radius:999px}
 *::-webkit-scrollbar-track{background: rgba(0,0,0,.12)}
@@ -185,3 +266,239 @@ a:hover{
 @media (max-width:720px){
   .grid{grid-template-columns:1fr}
 }
+
+
+/* =========================================================
+   ✅ script.js에서 새로 추가된 클래스들(인라인 제거용)
+   - 체크리스트 헤더/바디/아이템/법령 패널
+   - 배지(allow/conditional/deny/need_input/unknown)
+   - 요약 pre / 작은 보조 텍스트들
+========================================================= */
+
+/* 공용: 흐린 inline 텍스트 */
+.inlineDim{
+  opacity:.75;
+}
+
+/* 계산 note(기존 script.js에서 class로 변경) */
+.calcNote{
+  opacity:.85;
+  margin-top:8px;
+}
+
+/* 룰 적용 결과 메타 */
+.ruleAppliedMeta{
+  margin-top:6px;
+  opacity:.9;
+}
+
+/* 용도 판정 결과 row */
+.useRow{
+  margin-top:6px;
+  opacity:.9;
+}
+
+/* 주소 geocode 결과 */
+.geoName{
+  margin-top:6px;
+  opacity:.9;
+}
+.geoCoord{
+  margin-top:6px;
+}
+
+/* 자동 룰/용도지역 안내 */
+.ruleAutoZoning{ margin-top:6px; }
+.ruleAutoDone{ margin-top:6px; opacity:.9; }
+.ruleAutoJuris{ margin-top:6px; opacity:.9; }
+
+/* 요약 pre (script.js에서 summaryPre 사용) */
+.summaryPre{
+  white-space:pre-wrap;
+  margin:0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* 체크리스트 상단 헤더(카드 내부) */
+.clHeader{
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background: rgba(0,0,0,.12);
+  margin-bottom:12px;
+}
+.clHeaderRow{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+}
+.clHeaderText{ min-width:0; }
+.clHeaderTitle{ font-weight:900; }
+.clHeaderHint{
+  opacity:.85;
+  font-size:12px;
+  margin-top:6px;
+  line-height:1.45;
+}
+.clToggleAllBtn{
+  white-space:nowrap;
+}
+
+/* 체크리스트 body wrapper */
+.clBody{
+  display:block;
+}
+
+/* 체크리스트 item */
+.clItem{
+  padding:12px 0;
+  border-top:1px solid rgba(255,255,255,.10);
+}
+.clItemTop{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.clItemTitle{
+  font-weight:800;
+}
+.clJudge{
+  font-size:12px;
+  opacity:.95;
+  text-align:right;
+}
+.clWhy{
+  opacity:.85;
+  font-size:13px;
+  margin-top:6px;
+}
+
+/* ✅ NEW: applies_to 힌트(“조건: … / 현재: …”) */
+.clAppliesTo{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  margin-top:10px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  font-size:12px;
+  color: var(--muted);
+  line-height:1.25;
+  max-width:100%;
+  white-space:normal;
+  word-break:keep-all;
+}
+@media (max-width:720px){
+  .clAppliesTo{
+    display:flex;
+    border-radius:14px;
+  }
+}
+
+/* “필요 입력: …” 텍스트 라인 */
+.clNeedInputLine{
+  opacity:.85;
+  font-size:13px;
+  margin-top:4px;
+}
+
+/* 입력 라벨/캡션/인풋 */
+.clInputLabel{
+  display:block;
+  margin-top:10px;
+}
+.clInputCaption{
+  display:block;
+  margin-bottom:6px;
+  font-size:13px;
+  opacity:.9;
+  color: var(--muted);
+}
+.clInput{
+  width:100%;
+}
+
+/* 근거 refs */
+.clRefs{
+  opacity:.75;
+  font-size:12px;
+  margin-top:10px;
+}
+
+/* 법령 영역 */
+.clLaws{
+  margin-top:10px;
+}
+.clLawsBtn{}
+
+/* 법령 패널 */
+.lawsPanel{
+  margin-top:10px;
+}
+
+/* 판정 메시지 */
+.clJudgeMsg{
+  font-size:12px;
+  opacity:.9;
+  margin-top:10px;
+  line-height:1.45;
+}
+
+/* 법령 카드 */
+.lawCard{
+  margin-top:10px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background: rgba(0,0,0,.18);
+}
+.lawCardTop{
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  align-items:flex-start;
+}
+.lawCardTitle{
+  font-weight:900;
+}
+.lawCardDate{
+  opacity:.8;
+  font-size:12px;
+  white-space:nowrap;
+}
+.lawCardMeta{
+  opacity:.85;
+  font-size:12px;
+  margin-top:6px;
+}
+.lawCardSummary{
+  opacity:.92;
+  font-size:13px;
+  margin-top:8px;
+  line-height:1.5;
+}
+.lawCardSub{
+  opacity:.85;
+  font-size:12px;
+  margin-top:6px;
+}
+.lawCardLink{
+  margin-top:8px;
+  font-size:12px;
+}
+
+/* ✅ 판정 배지(색상) */
+.judgeBadge{
+  font-weight:900;
+}
+.judgeBadge--allow{ color: var(--good); }
+.judgeBadge--conditional{ color: var(--warn); }
+.judgeBadge--deny{ color: var(--bad); }
+.judgeBadge--need_input{ color: var(--warn); }
+.judgeBadge--unknown{ color: var(--warn); }

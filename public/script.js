@@ -29,6 +29,12 @@ let _lastGeocodeKey = "";
 // ✅ UX 정책: allow여도 체크리스트는 "기본(권장)"으로 항상 보여주기
 const ALWAYS_SHOW_CHECKLIST = true;
 
+// ✅ 마지막 용도 판정 status 저장 (runCalc 이후 enriched 재로딩 시 헤더 유지)
+let _lastUseStatus = "";
+
+// ✅ calc 자동 입력 후 서버판정 재호출 중복 방지용 플래그
+let _isAutoFillRunning = false;
+
 /* =========================
    유틸
 ========================= */
@@ -102,16 +108,242 @@ function badgeText(state) {
   return map[state] || "";
 }
 
-// ✅ 배지 색상(화면용)
-function badgeHtml(result) {
+// ✅ 서버/프론트 판정 status 정규화 (functions/index.js와 맞춤)
+function normalizeStatus(s) {
+  const v = String(s || "").trim().toLowerCase();
+  if (v === "allow") return "allow";
+  if (v === "deny") return "deny";
+  if (v === "conditional") return "conditional";
+  if (v === "need_input") return "need_input";
+  if (v === "unknown") return "unknown";
+  // 과거 데이터 호환
+  if (v === "warn") return "conditional";
+  return "unknown";
+}
+
+// ✅ 배지(화면용) - inline style 제거: CSS class로 처리
+function badgeHtml(statusRaw) {
+  const status = normalizeStatus(statusRaw);
+
   const map = {
-    allow: { label: "✅ 1차 통과", color: "var(--good)" },
-    warn: { label: "⚠️ 추가검토", color: "var(--warn)" },
-    deny: { label: "❌ 주의", color: "var(--bad)" },
+    allow: { label: "✅ 1차 통과", cls: "judgeBadge--allow" },
+    conditional: { label: "⚠️ 추가검토", cls: "judgeBadge--conditional" },
+    deny: { label: "❌ 주의", cls: "judgeBadge--deny" },
+    need_input: { label: "❓ 입력필요", cls: "judgeBadge--need_input" },
+    unknown: { label: "❓ 정보없음", cls: "judgeBadge--unknown" },
   };
-  const hit = map[result];
+
+  const hit = map[status];
   if (!hit) return "";
-  return `<span style="font-weight:900; color:${hit.color};">${escapeHtml(hit.label)}</span>`;
+  return `<span class="judgeBadge ${escapeHtml(hit.cls)}">${escapeHtml(hit.label)}</span>`;
+}
+
+/* =========================
+   ✅ 입력칸 누락 강조(need_input UX)
+   - JS는 data-missing="1"만 세팅
+   - 인라인 스타일은 사용하지 않음
+========================= */
+function clearMissingMarks(checklistId) {
+  const list = $("checklistList");
+  if (!list) return;
+
+  const inputs = list.querySelectorAll(`input[data-checklist-id="${checklistId}"][data-input-key]`);
+  inputs.forEach((el) => {
+    // ✅ CSS용 플래그만 제거
+    delete el.dataset.missing;
+
+    // 안내문 제거
+    const hintId = `missing_hint_${checklistId}_${el.getAttribute("data-input-key")}`;
+    const hint = document.getElementById(hintId);
+    if (hint) hint.remove();
+  });
+}
+
+function markMissingInputs(checklistId, missingInputs) {
+  const list = $("checklistList");
+  if (!list) return;
+
+  clearMissingMarks(checklistId);
+
+  const miss = Array.isArray(missingInputs) ? missingInputs : [];
+  miss.forEach((m) => {
+    const key = String(m?.key || "").trim();
+    if (!key) return;
+
+    const inputEl = list.querySelector(
+      `input[data-checklist-id="${checklistId}"][data-input-key="${key}"]`
+    );
+    if (!inputEl) return;
+
+    // ✅ CSS가 처리하도록 data-missing만 세팅
+    inputEl.dataset.missing = "1";
+
+    const label = String(m?.label || key).trim();
+    const hintId = `missing_hint_${checklistId}_${key}`;
+    const existed = document.getElementById(hintId);
+    if (existed) existed.remove();
+
+    const hint = document.createElement("div");
+    hint.id = hintId;
+    hint.className = "missing-hint";
+    hint.textContent = `❗ 입력 필요: ${label}`;
+
+    // input 바로 다음에 삽입
+    inputEl.insertAdjacentElement("afterend", hint);
+  });
+}
+
+/* =========================
+   ✅ calc -> 컨텍스트/입력 자동 채움 관련
+========================= */
+function buildEnrichedExtraFromCalc() {
+  const extra = {};
+  const r = lastCalcResult?.result;
+  if (!r) return extra;
+
+  // 서버 expects: floors, height_m, gross_area_m2
+  if (Number.isFinite(Number(r.estFloors))) extra.floors = Number(r.estFloors);
+  if (Number.isFinite(Number(r.estHeight_m))) extra.height_m = Number(r.estHeight_m);
+
+  // NOTE: 실제 연면적 확정값이 아니라 참고용(단순 최대치)
+  if (Number.isFinite(Number(r.maxTotalFloorArea_m2))) extra.gross_area_m2 = Number(r.maxTotalFloorArea_m2);
+
+  return extra;
+}
+
+// ✅ checklist input에 calc 값을 자동 채움(비어있을 때만)
+function autofillChecklistInputsFromCalc({ onlyEmpty = true } = {}) {
+  const list = $("checklistList");
+  const card = $("checklistCard");
+  const r = lastCalcResult?.result;
+
+  if (!list || !card || card.style.display === "none") return { changed: 0 };
+  if (!r) return { changed: 0 };
+
+  const map = {
+    floors: r.estFloors,
+    height_m: r.estHeight_m,
+    gross_area_m2: r.maxTotalFloorArea_m2, // 참고용 최대치
+  };
+
+  let changed = 0;
+
+  Object.entries(map).forEach(([key, val]) => {
+    if (!Number.isFinite(Number(val))) return;
+
+    const inputs = list.querySelectorAll(`input[data-input-key="${key}"]`);
+    inputs.forEach((el) => {
+      const cur = String(el.value ?? "").trim();
+      if (onlyEmpty && cur) return;
+
+      el.value = String(Number(val));
+      changed += 1;
+
+      // 입력 누락 강조가 남아있을 수 있어 제거
+      const checklistId = el.getAttribute("data-checklist-id");
+      if (checklistId) {
+        // 해당 키에 대한 missing 힌트만 제거(전체 clear는 과할 수 있어 key 단위로만)
+        delete el.dataset.missing;
+        const hintId = `missing_hint_${checklistId}_${key}`;
+        const hint = document.getElementById(hintId);
+        if (hint) hint.remove();
+      }
+    });
+  });
+
+  return { changed };
+}
+
+/* =========================
+   ✅ applies_to 힌트(프론트 표시용)
+   - "왜 뜨지?"를 줄이기 위한 UX
+========================= */
+function toNumSafe(v) {
+  if (v === "" || v === undefined || v === null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getCurrentKnownValue(key) {
+  // 우선: calc 결과 -> 입력값 -> ctx
+  const r = lastCalcResult?.result || null;
+
+  if (key === "floors") {
+    const fromCalc = toNumSafe(r?.estFloors);
+    if (fromCalc != null) return fromCalc;
+  }
+  if (key === "height_m") {
+    const fromCalc = toNumSafe(r?.estHeight_m);
+    if (fromCalc != null) return fromCalc;
+  }
+  if (key === "gross_area_m2") {
+    const fromCalc = toNumSafe(r?.maxTotalFloorArea_m2);
+    if (fromCalc != null) return fromCalc;
+  }
+
+  // 입력칸에 이미 들어간 값이 있으면 그걸 사용
+  const list = $("checklistList");
+  if (list) {
+    const el = list.querySelector(`input[data-input-key="${key}"]`);
+    if (el) {
+      const n = toNumSafe(el.value);
+      if (n != null) return n;
+    }
+  }
+
+  // ctx fallback
+  const v = _ctx?.[key];
+  const n = toNumSafe(v);
+  return n != null ? n : null;
+}
+
+function buildAppliesToHint(it) {
+  const a = it?.applies_to;
+  if (!a) return "";
+
+  const parts = [];
+  const needs = [];
+
+  // zoning/use/jurisdiction 조건은 "표시 이유"가 아니라 "적용 범위" 설명이므로 간단히
+  if (Array.isArray(a.zoning_in) && a.zoning_in.length > 0) {
+    parts.push(`용도지역: ${a.zoning_in.join(" · ")}`);
+  }
+  if (Array.isArray(a.use_in) && a.use_in.length > 0) {
+    parts.push(`용도: ${a.use_in.join(" · ")}`);
+  }
+  if (Array.isArray(a.jurisdiction_in) && a.jurisdiction_in.length > 0) {
+    parts.push(`지자체: ${a.jurisdiction_in.join(" · ")}`);
+  }
+
+  // 숫자 조건은 "현재값" 표시
+  if (a.min_gross_area_m2 != null) {
+    const th = toNumSafe(a.min_gross_area_m2);
+    const cur = getCurrentKnownValue("gross_area_m2");
+    if (cur == null) needs.push("연면적(㎡)");
+    else parts.push(`연면적 ≥ ${fmt(th)}㎡ (현재: ${fmt(cur)}㎡)`);
+  }
+
+  if (a.min_floors != null) {
+    const th = toNumSafe(a.min_floors);
+    const cur = getCurrentKnownValue("floors");
+    if (cur == null) needs.push("층수");
+    else parts.push(`층수 ≥ ${fmt(th)} (현재: ${fmt(cur)})`);
+  }
+
+  // 미래 확장 대비
+  if (a.min_height_m != null) {
+    const th = toNumSafe(a.min_height_m);
+    const cur = getCurrentKnownValue("height_m");
+    if (cur == null) needs.push("건물 높이(m)");
+    else parts.push(`높이 ≥ ${fmt(th)}m (현재: ${fmt(cur)}m)`);
+  }
+
+  if (needs.length > 0) {
+    return `조건 판단 필요: ${needs.join(", ")}` + (parts.length ? ` · 참고: ${parts.join(" / ")}` : "");
+  }
+
+  if (parts.length > 0) return `조건: ${parts.join(" / ")}`;
+  return "";
 }
 
 /* =========================
@@ -122,10 +354,14 @@ async function loadEnrichedChecklistWithContext(extra = {}) {
     const zoning = ($("zoning")?.value || "").trim();
     const use = ($("useSelect")?.value || "").trim();
 
+    // ✅ calc 기반 컨텍스트를 기본으로 포함
+    const calcExtra = buildEnrichedExtraFromCalc();
+
     const params = {
       zoning: zoning || _ctx.zoning || "",
       use: use || _ctx.use || "",
       jurisdiction: _ctx.jurisdiction || "",
+      ...calcExtra,
       ...extra,
     };
 
@@ -139,28 +375,97 @@ async function loadEnrichedChecklistWithContext(extra = {}) {
 }
 
 /* =========================
-   자동 판정(프론트 입력 기반)
+   ✅ 자동 판정(프론트 입력 기반)
 ========================= */
-function evaluateAutoRules(it, values) {
-  const rules = it.auto_rules || [];
-  for (const rule of rules) {
-    const cond = rule.when;
-    if (!cond) continue;
 
-    const v = Number(values[cond.key]);
-    const target = Number(cond.value);
+// 서버와 동일한 숫자 파서 느낌(빈값/NaN -> null)
+function toNumFront(v) {
+  if (v === "" || v === undefined || v === null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
-    if (!Number.isFinite(v) || !Number.isFinite(target)) continue;
+function evalCondFront(cond, values) {
+  if (!cond || !cond.key || !cond.op) return false;
 
-    let ok = false;
-    if (cond.op === "lt") ok = v < target;
-    if (cond.op === "lte") ok = v <= target;
-    if (cond.op === "gt") ok = v > target;
-    if (cond.op === "gte") ok = v >= target;
-    if (cond.op === "eq") ok = v === target;
+  const op = String(cond.op).trim().toLowerCase();
+  const key = String(cond.key).trim();
+  const raw = values?.[key];
 
-    if (ok) return { result: rule.result, message: rule.message };
+  if (op === "missing") {
+    if (raw === undefined || raw === null) return true;
+    if (typeof raw === "number") return !Number.isFinite(raw);
+    return String(raw).trim() === "";
   }
+  if (op === "present") {
+    if (raw === undefined || raw === null) return false;
+    if (typeof raw === "number") return Number.isFinite(raw);
+    return String(raw).trim() !== "";
+  }
+
+  if (op === "in" || op === "not_in") {
+    const arr = Array.isArray(cond.value) ? cond.value : [];
+    const hit = arr.map((x) => String(x)).includes(String(raw));
+    return op === "in" ? hit : !hit;
+  }
+
+  const vNum = toNumFront(raw);
+  const tNum = toNumFront(cond.value);
+
+  if (op === "eq") {
+    if (vNum != null && tNum != null) return vNum === tNum;
+    return String(raw) === String(cond.value);
+  }
+  if (op === "neq") {
+    if (vNum != null && tNum != null) return vNum !== tNum;
+    return String(raw) !== String(cond.value);
+  }
+
+  if (vNum == null || tNum == null) return false;
+  if (op === "lt") return vNum < tNum;
+  if (op === "lte") return vNum <= tNum;
+  if (op === "gt") return vNum > tNum;
+  if (op === "gte") return vNum >= tNum;
+
+  return false;
+}
+
+function ruleMatchesFront(rule, values) {
+  if (!rule) return false;
+
+  if (rule.when) return evalCondFront(rule.when, values);
+
+  if (Array.isArray(rule.when_all) && rule.when_all.length > 0) {
+    return rule.when_all.every((c) => evalCondFront(c, values));
+  }
+
+  if (Array.isArray(rule.when_any) && rule.when_any.length > 0) {
+    return rule.when_any.some((c) => evalCondFront(c, values));
+  }
+
+  return false;
+}
+
+function evaluateAutoRules(it, values) {
+  const rules = Array.isArray(it?.auto_rules) ? it.auto_rules : [];
+  if (!rules.length) return null;
+
+  // priority desc (서버와 일치)
+  const sorted = rules
+    .slice()
+    .sort((a, b) => (toNumFront(b.priority) ?? 0) - (toNumFront(a.priority) ?? 0));
+
+  for (const rule of sorted) {
+    if (!ruleMatchesFront(rule, values)) continue;
+
+    return {
+      result: normalizeStatus(rule.result),
+      message: rule.message,
+      rule_id: rule.id || null,
+      priority: toNumFront(rule.priority) ?? 0,
+    };
+  }
+
   return null;
 }
 
@@ -219,15 +524,19 @@ function applyServerJudgeResults(results) {
     const msgEl = $(`judge_msg_${id}`);
     if (!judgeEl || !msgEl) return;
 
-    const j = row.judge;
-    if (!j) {
-      judgeEl.innerHTML = "";
-      msgEl.textContent = "";
-      return;
-    }
+    const status = normalizeStatus(row.status ?? row?.judge?.result);
+    const message = String(row.message ?? row?.judge?.message ?? "").trim();
+    const missingInputs = row.missing_inputs || [];
 
-    judgeEl.innerHTML = badgeHtml(j.result);
-    msgEl.textContent = j.message || "";
+    judgeEl.innerHTML = badgeHtml(status);
+    msgEl.textContent = message || "";
+
+    // ✅ need_input이면 누락 입력 강조
+    if (status === "need_input") {
+      markMissingInputs(id, missingInputs);
+    } else {
+      clearMissingMarks(id);
+    }
   });
 }
 
@@ -244,6 +553,12 @@ async function runServerJudgeAndApply() {
 
   const zoning = ($("zoning")?.value || "").trim();
   const use = ($("useSelect")?.value || "").trim();
+
+  if (!zoning || !use) {
+    if (judgeServerHint) judgeServerHint.textContent = "용도지역/용도를 먼저 선택해 주세요.";
+    return { ok: false, reason: "missing_context" };
+  }
+
   const values = collectValuesForServerJudge();
 
   const payload = {
@@ -289,38 +604,44 @@ const debouncedServerJudge = debounce(async () => {
 }, 650);
 
 /* =========================
-   체크리스트 렌더링 + 법령 토글 + 전체 접기/펼치기
+   ✅ 체크리스트 렌더링 + 토글
 ========================= */
 function renderChecklist(items, opts = {}) {
   const card = $("checklistCard");
   const list = $("checklistList");
   if (!card || !list) return;
 
-  const status = opts.status || ""; // allow | conditional | deny | unknown
-  const mode = opts.mode || "default"; // "basic" | "conditional" | "default"
+  const status = normalizeStatus(opts.status || "");
 
   _renderedChecklist = Array.isArray(items) ? items : [];
   _currentChecklistItems = _renderedChecklist;
 
   if (!items || items.length === 0) {
+    // ✅ 숨김은 style + class 모두 정리 (HTML 초기 상태가 어떻든 안전)
     card.style.display = "none";
+    card.classList.add("is-hidden");
     list.innerHTML = "";
     const hint = $("judgeServerHint");
     if (hint) hint.textContent = "";
     return;
   }
 
+  // ✅ 표시 시에는 style + class 모두 정리 (예전 HTML의 is-hidden 잔존 대비)
   card.style.display = "block";
+  card.classList.remove("is-hidden");
 
-  // ✅ allow면 기본 접힘(요약), conditional/deny면 펼침
+  // ✅ allow면 기본 접힘(요약), conditional/deny/need_input면 펼침
   const shouldCollapse = status === "allow";
+
   const headerTitle =
     status === "allow"
       ? "✅ 기본 체크리스트(권장)"
       : status === "conditional"
-      ? "⚠️ 조건부 체크리스트(추가 입력 필요)"
+      ? "⚠️ 조건부 체크리스트(추가 검토 필요)"
       : status === "deny"
       ? "❌ 불가 판정이지만, 원인 점검용 체크리스트"
+      : status === "need_input"
+      ? "❓ 입력이 필요한 체크리스트"
       : "🧾 체크리스트";
 
   const headerHint =
@@ -330,136 +651,137 @@ function renderChecklist(items, opts = {}) {
       ? "조건부로 판정되었어요. 아래 항목을 입력/검토하면 결론이 더 명확해집니다."
       : status === "deny"
       ? "불가로 나왔지만, 어떤 규제가 걸리는지 빠르게 확인해요."
+      : status === "need_input"
+      ? "입력값이 부족해요. 아래 항목을 입력하면 서버가 자동으로 판정해줘요."
       : "항목을 입력하면 자동/서버 판정이 반영됩니다.";
 
-  const rootDisplay = shouldCollapse ? "none" : "block";
+  // body 표시/숨김은 클래스 기반
+  const bodyHiddenClass = shouldCollapse ? "is-hidden" : "";
 
-  list.innerHTML =
-    `
-    <div style="padding:10px; border:1px solid rgba(255,255,255,.12); border-radius:14px; background:rgba(0,0,0,.12); margin-bottom:12px;">
-      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
-        <div>
-          <div style="font-weight:900;">${escapeHtml(headerTitle)}</div>
-          <div style="opacity:.85; font-size:12px; margin-top:6px; line-height:1.45;">${escapeHtml(headerHint)}</div>
+  const headerHtml = `
+    <div class="clHeader">
+      <div class="clHeaderRow">
+        <div class="clHeaderText">
+          <div class="clHeaderTitle">${escapeHtml(headerTitle)}</div>
+          <div class="clHeaderHint">${escapeHtml(headerHint)}</div>
         </div>
-        <button type="button" class="ghost" data-toggle-checklist="all" style="white-space:nowrap;">
+        <button type="button" class="ghost clToggleAllBtn" data-toggle-checklist="all">
           ${shouldCollapse ? "펼치기" : "접기"}
         </button>
       </div>
     </div>
+  `;
 
-    <div id="checklistBody" style="display:${rootDisplay};">
-    ` +
-    items
-      .map((it) => {
-        const inputs = Array.isArray(it.inputs) ? it.inputs : [];
-        const inputHtml = inputs
-          .map((inp) => {
-            if (typeof inp === "string") {
-              return `<div style="opacity:.85; font-size:13px; margin-top:4px;">- 필요 입력: ${escapeHtml(inp)}</div>`;
-            }
+  const bodyOpenHtmlStart = `<div id="checklistBody" class="clBody ${bodyHiddenClass}">`;
+  const bodyOpenHtmlEnd = `</div>`;
 
-            const type = inp.type || "text";
-            const key = inp.key || "";
-            const label = inp.label || key;
-            const placeholder = inp.placeholder || "";
+  const itemsHtml = items
+    .map((it) => {
+      const inputs = Array.isArray(it.inputs) ? it.inputs : [];
 
+      const appliesHint = buildAppliesToHint(it);
+      const appliesHtml = appliesHint
+        ? `<div class="clAppliesTo">🔎 ${escapeHtml(appliesHint)}</div>`
+        : "";
+
+      const inputHtml = inputs
+        .map((inp) => {
+          if (typeof inp === "string") {
+            return `<div class="clNeedInputLine">- 필요 입력: ${escapeHtml(inp)}</div>`;
+          }
+
+          const type = inp.type || "text";
+          const key = inp.key || "";
+          const label = inp.label || key;
+          const placeholder = inp.placeholder || "";
+
+          return `
+            <label class="clInputLabel">
+              <span class="clInputCaption">${escapeHtml(label)}</span>
+              <input
+                class="clInput"
+                data-checklist-id="${escapeHtml(it.id)}"
+                data-input-key="${escapeHtml(key)}"
+                type="${escapeHtml(type)}"
+                placeholder="${escapeHtml(placeholder)}"
+              />
+            </label>
+          `;
+        })
+        .join("");
+
+      const refs = Array.isArray(it.refs) ? it.refs : [];
+      const refsText = refs.join(", ");
+      const lawMap = it?.laws || {};
+
+      const refsCards = refs
+        .map((code) => {
+          const ref = lawMap?.[code];
+          if (!ref) {
             return `
-              <label style="display:block; margin-top:10px;">
-                <span style="display:block; margin-bottom:6px; font-size:13px; opacity:.9;">${escapeHtml(label)}</span>
-                <input 
-                  data-checklist-id="${escapeHtml(it.id)}"
-                  data-input-key="${escapeHtml(key)}"
-                  type="${escapeHtml(type)}"
-                  placeholder="${escapeHtml(placeholder)}"
-                />
-              </label>
-            `;
-          })
-          .join("");
-
-        const refs = Array.isArray(it.refs) ? it.refs : [];
-        const refsText = refs.join(", ");
-        const lawMap = it?.laws || {};
-
-        const refsCards = refs
-          .map((code) => {
-            const ref = lawMap?.[code];
-            if (!ref) {
-              return `
-                <div style="margin-top:10px; padding:12px; border:1px solid rgba(255,255,255,.12); border-radius:12px; background:rgba(0,0,0,.18);">
-                  <div style="font-weight:800;">${escapeHtml(code)}</div>
-                  <div style="opacity:.85; font-size:12px; margin-top:6px;">(laws.json에 정보가 없어요)</div>
-                </div>
-              `;
-            }
-
-            const urlHtml = ref.url
-              ? `<div style="margin-top:8px; font-size:12px;">
-                  <a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener">법령 링크 열기</a>
-                </div>`
-              : "";
-
-            return `
-              <div style="margin-top:10px; padding:12px; border:1px solid rgba(255,255,255,.12); border-radius:12px; background:rgba(0,0,0,.18);">
-                <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
-                  <div style="font-weight:900;">${escapeHtml(code)} · ${escapeHtml(ref.title)}</div>
-                  <div style="opacity:.8; font-size:12px; white-space:nowrap;">${escapeHtml(ref.updated_at || "")}</div>
-                </div>
-                <div style="opacity:.85; font-size:12px; margin-top:6px;">
-                  ${escapeHtml(ref.law_name || "")} ${escapeHtml(ref.article || "")}
-                </div>
-                <div style="opacity:.92; font-size:13px; margin-top:8px; line-height:1.5;">
-                  ${escapeHtml(ref.summary || "")}
-                </div>
-                ${urlHtml}
+              <div class="lawCard">
+                <div class="lawCardTitle">${escapeHtml(code)}</div>
+                <div class="lawCardSub">(laws.json에 정보가 없어요)</div>
               </div>
             `;
-          })
-          .join("");
+          }
 
-        const hasRefs = refs.length > 0;
+          const urlHtml = ref.url
+            ? `<div class="lawCardLink"><a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener">법령 링크 열기</a></div>`
+            : "";
 
-        return `
-          <div style="padding:12px 0; border-top:1px solid rgba(255,255,255,.10);">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
-              <div style="font-weight:800;">□ ${escapeHtml(it.title)}</div>
-              <div id="judge_${escapeHtml(it.id)}"
-                data-title="${escapeHtml(it.title)}"
-                style="font-size:12px; opacity:.95; text-align:right;"></div>
+          return `
+            <div class="lawCard">
+              <div class="lawCardTop">
+                <div class="lawCardTitle">${escapeHtml(code)} · ${escapeHtml(ref.title)}</div>
+                <div class="lawCardDate">${escapeHtml(ref.updated_at || "")}</div>
+              </div>
+              <div class="lawCardMeta">${escapeHtml(ref.law_name || "")} ${escapeHtml(ref.article || "")}</div>
+              <div class="lawCardSummary">${escapeHtml(ref.summary || "")}</div>
+              ${urlHtml}
             </div>
+          `;
+        })
+        .join("");
 
-            <div style="opacity:.85; font-size:13px; margin-top:6px;">- 왜 체크? ${escapeHtml(it.why || "")}</div>
-            ${inputHtml}
+      const hasRefs = refs.length > 0;
 
-            <div style="opacity:.75; font-size:12px; margin-top:10px;">
-              - 근거: ${escapeHtml(refsText || "-")}
-            </div>
-
-            ${
-              hasRefs
-                ? `
-                <div style="margin-top:10px;">
-                  <button type="button" class="ghost" data-toggle-laws="${escapeHtml(it.id)}">
-                    📖 근거 법령 보기
-                  </button>
-                  <div id="laws_${escapeHtml(it.id)}" style="display:none; margin-top:10px;">
-                    ${refsCards}
-                  </div>
-                </div>
-              `
-                : ""
-            }
-
-            <div id="judge_msg_${escapeHtml(it.id)}"
-                 style="font-size:12px; opacity:.9; margin-top:10px; line-height:1.45;"></div>
+      return `
+        <div class="clItem">
+          <div class="clItemTop">
+            <div class="clItemTitle">□ ${escapeHtml(it.title)}</div>
+            <div id="judge_${escapeHtml(it.id)}" class="clJudge" data-title="${escapeHtml(it.title)}"></div>
           </div>
-        `;
-      })
-      .join("") +
-    `
-    </div>
-    `;
+
+          ${appliesHtml}
+
+          <div class="clWhy">- 왜 체크? ${escapeHtml(it.why || "")}</div>
+          ${inputHtml}
+
+          <div class="clRefs">- 근거: ${escapeHtml(refsText || "-")}</div>
+
+          ${
+            hasRefs
+              ? `
+              <div class="clLaws">
+                <button type="button" class="ghost clLawsBtn" data-toggle-laws="${escapeHtml(it.id)}">
+                  📖 근거 법령 보기
+                </button>
+                <div id="laws_${escapeHtml(it.id)}" class="lawsPanel is-hidden">
+                  ${refsCards}
+                </div>
+              </div>
+            `
+              : ""
+          }
+
+          <div id="judge_msg_${escapeHtml(it.id)}" class="clJudgeMsg"></div>
+        </div>
+      `;
+    })
+    .join("");
+
+  list.innerHTML = `${headerHtml}${bodyOpenHtmlStart}${itemsHtml}${bodyOpenHtmlEnd}`;
 
   // 🔒 이벤트 중복 바인딩 방지
   if (!list._delegationBound) {
@@ -471,19 +793,25 @@ function renderChecklist(items, opts = {}) {
       if (allBtn) {
         const body = $("checklistBody");
         if (!body) return;
-        const isHidden = body.style.display === "none";
-        body.style.display = isHidden ? "block" : "none";
-        allBtn.textContent = isHidden ? "접기" : "펼치기";
+
+        const isHidden = body.classList.contains("is-hidden");
+        if (isHidden) body.classList.remove("is-hidden");
+        else body.classList.add("is-hidden");
+
+        // ✅ 토글 후 상태 기반으로 버튼 텍스트 동기화
+        allBtn.textContent = body.classList.contains("is-hidden") ? "펼치기" : "접기";
         return;
       }
 
       // (1) 법령 토글
       const btn = e.target?.closest?.("button[data-toggle-laws]");
       if (!btn) return;
+
       const id = btn.getAttribute("data-toggle-laws");
       const panel = $(`laws_${id}`);
       if (!panel) return;
-      panel.style.display = panel.style.display === "none" ? "block" : "none";
+
+      panel.classList.toggle("is-hidden");
     });
 
     // (2) 입력 변경 시 자동판정(프론트) + 서버판정(디바운스)
@@ -512,10 +840,8 @@ function renderChecklist(items, opts = {}) {
       const msgEl = $(`judge_msg_${checklistId}`);
       if (!judgeEl || !msgEl) return;
 
-      if (!judged) {
-        judgeEl.innerHTML = "";
-        msgEl.textContent = "";
-      } else {
+      // 프론트 auto_rules는 "즉시 피드백" 용 (서버판정이 최종)
+      if (judged) {
         judgeEl.innerHTML = badgeHtml(judged.result) || escapeHtml(judged.result);
         msgEl.textContent = judged.message || "";
       }
@@ -525,7 +851,43 @@ function renderChecklist(items, opts = {}) {
     });
   }
 
-  // 체크리스트가 새로 뜨면 1회 서버판정
+  // ✅ enriched에서 내려온 초기 server_judge + missing_inputs를 1회 반영
+  items.forEach((it) => {
+    const id = it.id;
+    const judgeEl = $(`judge_${id}`);
+    const msgEl = $(`judge_msg_${id}`);
+    if (!judgeEl || !msgEl) return;
+
+    const sj = it.server_judge;
+    if (sj?.result) {
+      judgeEl.innerHTML = badgeHtml(sj.result);
+      if (sj.message) msgEl.textContent = sj.message;
+    }
+
+    const miss = it.missing_inputs || [];
+    if (miss.length) markMissingInputs(id, miss);
+  });
+
+  // ✅ (핵심) calc 결과가 있으면 입력칸 자동 채우고, 즉시 서버판정 1회
+  try {
+    const { changed } = autofillChecklistInputsFromCalc({ onlyEmpty: true });
+    if (changed > 0) {
+      // 즉시 서버판정(디바운스 없이)
+      if (!_isAutoFillRunning) {
+        _isAutoFillRunning = true;
+        Promise.resolve()
+          .then(() => runServerJudgeAndApply())
+          .finally(() => {
+            _isAutoFillRunning = false;
+          });
+      }
+      return;
+    }
+  } catch (e) {
+    console.warn("autofill after render failed:", e);
+  }
+
+  // 체크리스트가 새로 뜨면 1회 서버판정(최종 갱신)
   debouncedServerJudge();
 }
 
@@ -577,7 +939,7 @@ async function runCalc() {
       <div>최대 연면적(단순): <b>${fmt(res.maxTotalFloorArea_m2)} ㎡</b></div>
       <div>예상 층수: <b>${fmt(res.estFloors)} 층</b></div>
       <div>예상 건물 높이: <b>${fmt(res.estHeight_m)} m</b></div>
-      <div style="opacity:.85;margin-top:8px;">${escapeHtml(data.note || "")}</div>
+      <div class="calcNote">${escapeHtml(data.note || "")}</div>
     `;
 
     talkEl.value = [
@@ -589,8 +951,33 @@ async function runCalc() {
       .filter(Boolean)
       .join("\n");
 
-    // ✅ 계산값이 생기면 체크리스트 서버판정에도 도움
-    debouncedServerJudge();
+    // ✅ (1) 계산값이 생기면 체크리스트 입력칸 자동 채움 + 서버판정 즉시 1회
+    try {
+      const { changed } = autofillChecklistInputsFromCalc({ onlyEmpty: true });
+      if (changed > 0) {
+        await runServerJudgeAndApply();
+      } else {
+        // 값이 안 들어갔어도 서버판정엔 도움 되므로 디바운스 호출
+        debouncedServerJudge();
+      }
+    } catch (e) {
+      console.warn("calc -> autofill failed:", e);
+      debouncedServerJudge();
+    }
+
+    // ✅ (2) 계산값이 생기면 enriched를 재로딩해서 applies_to 관련 표시/힌트 업데이트
+    try {
+      const fn = window.__refreshChecklistByContext;
+      if (typeof fn === "function") {
+        const z = ($("zoning")?.value || "").trim();
+        const u = ($("useSelect")?.value || "").trim();
+        if (z && u) {
+          await fn({ zoning: z, use: u, status: _lastUseStatus || "unknown", reason: "calc_reload" });
+        }
+      }
+    } catch (e) {
+      console.warn("calc -> checklist reload failed:", e);
+    }
   } catch (e) {
     resultEl.innerHTML = `오류: ${escapeHtml(String(e))}`;
     talkEl.value = "오류가 발생했습니다. 입력값/서버 상태를 확인해 주세요.";
@@ -607,6 +994,7 @@ function resetAll() {
   });
 
   lastCalcResult = null;
+  _lastUseStatus = "";
 
   const resultEl = $("result");
   const talkEl = $("talkTrack");
@@ -871,7 +1259,7 @@ window.addEventListener("DOMContentLoaded", () => {
         ruleHint,
         `
         <div>✅ <b>${escapeHtml(zoning)}</b> 룰 적용 완료</div>
-        <div style="margin-top:6px; opacity:.9">
+        <div class="ruleAppliedMeta">
           건폐율(상한): ${rule.bcr_max ?? "-"}% /
           용적률(상한): ${rule.far_max ?? "-"}%
         </div>
@@ -934,8 +1322,8 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ✅ (핵심) status와 무관하게 체크리스트를 로드/렌더하는 함수
-  async function refreshChecklistByContext({ zoning, use, status } = {}) {
+  // ✅ status와 무관하게 체크리스트를 로드/렌더하는 함수
+  async function refreshChecklistByContext({ zoning, use, status, reason = "" } = {}) {
     const z = (zoning ?? zoningSelect?.value ?? "").trim();
     const u = (use ?? useSelect?.value ?? "").trim();
 
@@ -944,8 +1332,7 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // allow여도 체크리스트를 보여주고 싶으면 로드
-    if (!ALWAYS_SHOW_CHECKLIST && status !== "conditional") {
+    if (!ALWAYS_SHOW_CHECKLIST && normalizeStatus(status) !== "conditional") {
       renderChecklist([]);
       return;
     }
@@ -954,11 +1341,14 @@ window.addEventListener("DOMContentLoaded", () => {
       zoning: z,
       use: u,
       jurisdiction: _ctx.jurisdiction || "",
+      ...buildEnrichedExtraFromCalc(),
     });
 
-    // status에 따라 헤더/접힘 정책 적용
     renderChecklist(items, { status });
   }
+
+  // ✅ runCalc에서 재사용할 수 있게 전역으로 노출
+  window.__refreshChecklistByContext = refreshChecklistByContext;
 
   // 용도 가능여부 체크
   async function checkUseAndMaybeChecklist({ zoning, use, reason = "" } = {}) {
@@ -978,7 +1368,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     setText(
       useResult,
-      `용도 가능 여부 판단 중... ${reason ? `<span style="opacity:.75">(${escapeHtml(reason)})</span>` : ""}`
+      `용도 가능 여부 판단 중... ${reason ? `<span class="inlineDim">(${escapeHtml(reason)})</span>` : ""}`
     );
 
     try {
@@ -988,17 +1378,23 @@ window.addEventListener("DOMContentLoaded", () => {
       const data = await fetchJson(`/api/uses/check?zoning=${encodeURIComponent(z)}&use=${encodeURIComponent(u)}`);
       const useLabel = _useLabelMap[u] || u;
 
+      // ✅ 마지막 status 저장
+      _lastUseStatus = data.status || "";
+
       setText(
         useResult,
         `
           <div><b>${escapeHtml(data.message)}</b></div>
-          <div style="margin-top:6px; opacity:.9">용도지역: ${escapeHtml(data.zoning)}</div>
-          <div style="margin-top:6px; opacity:.9">용도: ${escapeHtml(useLabel)} (${escapeHtml(u)})</div>
-          ${_ctx.jurisdiction ? `<div style="margin-top:6px; opacity:.9">지자체(추정): ${escapeHtml(_ctx.jurisdiction)}</div>` : ""}
+          <div class="useRow">용도지역: ${escapeHtml(data.zoning)}</div>
+          <div class="useRow">용도: ${escapeHtml(useLabel)} (${escapeHtml(u)})</div>
+          ${
+            _ctx.jurisdiction
+              ? `<div class="useRow">지자체(추정): ${escapeHtml(_ctx.jurisdiction)}</div>`
+              : ""
+          }
         `
       );
 
-      // ✅ 여기서부터가 핵심: status 상관없이 체크리스트 로드(allow여도 "기본 체크리스트(권장)")
       await refreshChecklistByContext({ zoning: z, use: u, status: data.status });
     } catch (e) {
       setText(useResult, `❌ 용도 판단 실패: ${escapeHtml(String(e))}`);
@@ -1031,7 +1427,9 @@ window.addEventListener("DOMContentLoaded", () => {
     if (hasChecklist) await runServerJudgeAndApply();
 
     const text = buildSummaryText();
-    if (summaryBox) summaryBox.innerHTML = `<pre style="white-space:pre-wrap; margin:0;">${escapeHtml(text)}</pre>`;
+    if (summaryBox) {
+      summaryBox.innerHTML = `<pre class="summaryPre">${escapeHtml(text)}</pre>`;
+    }
   });
 
   $("copySummaryBtn")?.addEventListener("click", async () => {
@@ -1071,7 +1469,10 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     _geocodeAbort = new AbortController();
 
-    setText(addrResult, `좌표 조회 중... ${reason ? `<span style="opacity:.75">(${escapeHtml(reason)})</span>` : ""}`);
+    setText(
+      addrResult,
+      `좌표 조회 중... ${reason ? `<span class="inlineDim">(${escapeHtml(reason)})</span>` : ""}`
+    );
 
     try {
       const data = await fetchJson(`/api/geocode?q=${encodeURIComponent(query)}`, {
@@ -1095,8 +1496,8 @@ window.addEventListener("DOMContentLoaded", () => {
         addrResult,
         `
           <div>✅ 조회 성공</div>
-          <div style="margin-top:6px; opacity:.9">${escapeHtml(display_name)}</div>
-          <div style="margin-top:6px;"><b>위도</b> ${lat} / <b>경도</b> ${lon}</div>
+          <div class="geoName">${escapeHtml(display_name)}</div>
+          <div class="geoCoord"><b>위도</b> ${lat} / <b>경도</b> ${lon}</div>
         `
       );
 
@@ -1118,9 +1519,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
       // 좌표 기반 자동 용도지역 판정 → 룰 적용
       try {
-        const zdata = await fetchJson(`/api/zoning/by-coord?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, {
-          signal: _geocodeAbort.signal,
-        });
+        const zdata = await fetchJson(
+          `/api/zoning/by-coord?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+          { signal: _geocodeAbort.signal }
+        );
 
         if (zdata.found) {
           if (zoningSelect) zoningSelect.value = zdata.zoning;
@@ -1132,9 +1534,13 @@ window.addEventListener("DOMContentLoaded", () => {
               ruleHint,
               `
                 <div>🧭 좌표 기반 추정 용도지역 자동 설정</div>
-                <div style="margin-top:6px;"><b>${escapeHtml(zdata.zoning)}</b> [추정]</div>
-                <div style="margin-top:6px; opacity:.9">룰(건폐율/용적률) 자동 적용 완료</div>
-                ${_ctx.jurisdiction ? `<div style="margin-top:6px; opacity:.9">지자체(추정): ${escapeHtml(_ctx.jurisdiction)}</div>` : ""}
+                <div class="ruleAutoZoning"><b>${escapeHtml(zdata.zoning)}</b> [추정]</div>
+                <div class="ruleAutoDone">룰(건폐율/용적률) 자동 적용 완료</div>
+                ${
+                  _ctx.jurisdiction
+                    ? `<div class="ruleAutoJuris">지자체(추정): ${escapeHtml(_ctx.jurisdiction)}</div>`
+                    : ""
+                }
               `
             );
           } catch (e) {
@@ -1145,12 +1551,20 @@ window.addEventListener("DOMContentLoaded", () => {
           const defaultUse = "RES_HOUSE";
           if (_usesLoaded && useSelect) {
             useSelect.value = defaultUse;
-            await checkUseAndMaybeChecklist({ zoning: zdata.zoning, use: defaultUse, reason: "기본용도(주거) 자동" });
+            await checkUseAndMaybeChecklist({
+              zoning: zdata.zoning,
+              use: defaultUse,
+              reason: "기본용도(주거) 자동",
+            });
           } else {
             const retryOnce = async () => {
               if (!_usesLoaded) return;
               if (useSelect) useSelect.value = defaultUse;
-              await checkUseAndMaybeChecklist({ zoning: zdata.zoning, use: defaultUse, reason: "기본용도(주거) 자동" });
+              await checkUseAndMaybeChecklist({
+                zoning: zdata.zoning,
+                use: defaultUse,
+                reason: "기본용도(주거) 자동",
+              });
             };
             setTimeout(retryOnce, 250);
             setTimeout(retryOnce, 800);

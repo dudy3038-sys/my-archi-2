@@ -1,4 +1,11 @@
 {
+  "version": "0.3.1",
+  "updated_at": "2026-02-03",
+  "notes": [
+    "UI/설명/입력 정의용 체크리스트 데이터",
+    "판정 로직(rule_set/auto_rules/optional_inputs)은 rule_engine.json로 분리",
+    "주의: inputs에 넣은 key는 기본적으로 '필수 입력'으로 간주됨(= optional_inputs로 제외하지 않으면 need_input 판정 가능)"
+  ],
   "default_conditional": [
     {
       "id": "road_access",
@@ -9,21 +16,8 @@
       "inputs": [
         { "key": "road_width_m", "label": "도로 폭(m)", "type": "number", "placeholder": "예: 4" }
       ],
-      "auto_rules": [
-        {
-          "when": { "op": "lt", "key": "road_width_m", "value": 4 },
-          "result": "deny",
-          "message": "도로 폭 4m 미만이면 건축법상 원칙적으로 제한 가능성이 큼(예외/현황도로/지목/확폭 등 추가 검토)"
-        },
-        {
-          "when": { "op": "gte", "key": "road_width_m", "value": 4 },
-          "result": "allow",
-          "message": "도로 폭 4m 이상으로 1차 기준 충족(세부 조건은 현장/지자체 확인)"
-        }
-      ],
       "refs": ["BLD-ACT-44"]
     },
-
     {
       "id": "parking",
       "title": "주차대수 확보",
@@ -31,17 +25,15 @@
       "logic_level": "manual",
       "category": "주차/교통",
       "inputs": [
-        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 800" },
-        { "key": "use_hint", "label": "용도(메모)", "type": "text", "placeholder": "예: 공동주택/근린생활 등" }
+        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 800" }
       ],
-      "auto_rules": [],
       "refs": ["PARK-ORD-01"],
-      "applies_to": {
-        "min_gross_area_m2": 300
-      },
-      "notes": ["샘플 기준: 연면적 300㎡ 이상에서만 표시(실제는 용도/조례별로 다름)"]
+      "applies_to": { "min_gross_area_m2": 300 },
+      "notes": [
+        "샘플 기준: 연면적 300㎡ 이상에서만 표시(실제는 용도/조례별로 다름)",
+        "용도 메모(use_hint)가 필요하면: 별도 메모 UI로 처리하거나 rule_engine.json에서 optional_inputs로 제외 처리"
+      ]
     },
-
     {
       "id": "daylight",
       "title": "일조 사선 제한",
@@ -52,13 +44,11 @@
         { "key": "height_m", "label": "건물 높이(m)", "type": "number", "placeholder": "예: 18" },
         { "key": "setback_m", "label": "대지 경계 거리(m)", "type": "number", "placeholder": "예: 2" }
       ],
-      "auto_rules": [],
       "refs": ["BLD-ACT-61"],
       "applies_to": {
         "zoning_in": ["제1종일반주거지역", "제2종일반주거지역", "제3종일반주거지역"]
       }
     },
-
     {
       "id": "fire_escape",
       "title": "피난/방화 구획",
@@ -68,18 +58,6 @@
       "inputs": [
         { "key": "floors", "label": "층수", "type": "number", "placeholder": "예: 6" },
         { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 2500" }
-      ],
-      "auto_rules": [
-        {
-          "when": { "op": "gte", "key": "floors", "value": 6 },
-          "result": "warn",
-          "message": "6층 이상이면 피난/방화 요구가 강화될 수 있음(피난계단/방화구획 등) — 법령/용도/연면적 기준 함께 확인"
-        },
-        {
-          "when": { "op": "lt", "key": "floors", "value": 6 },
-          "result": "allow",
-          "message": "층수 기준(6층 미만)에서는 상대적으로 요구가 완화될 가능성(단, 용도/연면적/특정 기준은 별도)"
-        }
       ],
       "refs": ["FIRE-REG-05"]
     }
