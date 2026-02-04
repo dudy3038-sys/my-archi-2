@@ -35,6 +35,10 @@ let _lastUseStatus = "";
 // ✅ calc 자동 입력 후 서버판정 재호출 중복 방지용 플래그
 let _isAutoFillRunning = false;
 
+// ✅ 법령 상세 Lazy-load 캐시
+const _lawCache = new Map(); // code -> { ok, found, data, source, error }
+const _lawLoading = new Set(); // `${itemId}` 단위 로딩 잠금
+
 /* =========================
    유틸
 ========================= */
@@ -136,6 +140,217 @@ function badgeHtml(statusRaw) {
   const hit = map[status];
   if (!hit) return "";
   return `<span class="judgeBadge ${escapeHtml(hit.cls)}">${escapeHtml(hit.label)}</span>`;
+}
+
+/* =========================
+   ✅ 법령 상세(클릭 시 로드)
+   - FIX1: /api/laws?codes 응답은 res.list 사용
+   - FIX2: item 단위로 bulk 로드(한 번에)
+========================= */
+
+// 단일 코드 조회(가능하면 /api/laws/:code)
+async function fetchLawByCode(code) {
+  const c = String(code || "").trim();
+  if (!c) return { ok: true, found: false, code: c, data: null, source: "invalid_code" };
+
+  if (_lawCache.has(c)) return _lawCache.get(c);
+
+  try {
+    const res = await fetchJson(`/api/laws/${encodeURIComponent(c)}`);
+    const out = {
+      ok: true,
+      found: !!res.found,
+      code: res.code || c,
+      data: res.data || null,
+      source: res.source || "api_laws_code",
+    };
+    _lawCache.set(c, out);
+    return out;
+  } catch (e1) {
+    // fallback: bulk endpoint로 단일 코드 조회
+    try {
+      const res2 = await fetchJson(`/api/laws${buildQuery({ codes: c })}`);
+      const picked = res2?.list?.[c] || null; // ✅ FIX: list
+      const out2 = {
+        ok: true,
+        found: !!picked,
+        code: c,
+        data: picked,
+        source: res2.source || "api_laws_query",
+      };
+      _lawCache.set(c, out2);
+      return out2;
+    } catch (e2) {
+      const outErr = {
+        ok: false,
+        found: false,
+        code: c,
+        data: null,
+        source: "error",
+        error: String(e2?.message || e2 || e1?.message || e1),
+      };
+      _lawCache.set(c, outErr);
+      return outErr;
+    }
+  }
+}
+
+// ✅ 여러 코드 한 번에 bulk 조회
+async function fetchLawsByCodesBulk(codes) {
+  const arr = (codes || [])
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+
+  if (arr.length === 0) return { ok: true, list: {}, missing: [] };
+
+  // 캐시에 이미 있는 것/없는 것 분리
+  const need = [];
+  const listFromCache = {};
+  arr.forEach((c) => {
+    const cached = _lawCache.get(c);
+    if (cached && cached.ok !== false && cached.found && cached.data) {
+      listFromCache[c] = cached.data;
+    } else {
+      need.push(c);
+    }
+  });
+
+  // 전부 캐시에 있으면 끝
+  if (need.length === 0) {
+    return { ok: true, list: listFromCache, missing: [] };
+  }
+
+  // bulk 호출 1회
+  try {
+    const res = await fetchJson(`/api/laws${buildQuery({ codes: need.join(",") })}`);
+    const list = res?.list || {}; // ✅ 서버 스펙: list
+    const missing = Array.isArray(res?.missing) ? res.missing : [];
+
+    // 캐시에 주입
+    need.forEach((c) => {
+      if (list[c]) {
+        _lawCache.set(c, { ok: true, found: true, code: c, data: list[c], source: res.source || "api_laws_bulk" });
+      } else if (missing.includes(c)) {
+        _lawCache.set(c, { ok: true, found: false, code: c, data: null, source: res.source || "api_laws_bulk" });
+      } else {
+        // 혹시 서버가 missing을 안주거나, 예상치 못한 경우
+        _lawCache.set(c, { ok: true, found: false, code: c, data: null, source: res.source || "api_laws_bulk" });
+      }
+    });
+
+    // 반환 합치기
+    return { ok: true, list: { ...listFromCache, ...list }, missing };
+  } catch (e) {
+    // bulk 실패 시 단일로 degrade
+    const list = { ...listFromCache };
+    const missing = [];
+    for (const c of need) {
+      const one = await fetchLawByCode(c);
+      if (one.ok && one.found && one.data) list[c] = one.data;
+      else missing.push(c);
+    }
+    return { ok: true, list, missing };
+  }
+}
+
+function renderLawCardHtml(code, payload) {
+  const c = String(code || "").trim();
+
+  if (!payload) {
+    return `
+      <div class="lawCard">
+        <div class="lawCardTitle">${escapeHtml(c)}</div>
+        <div class="lawCardSub">(정보 없음)</div>
+      </div>
+    `;
+  }
+
+  if (payload.ok === false) {
+    return `
+      <div class="lawCard">
+        <div class="lawCardTitle">${escapeHtml(c)}</div>
+        <div class="lawCardSub">❌ 불러오기 실패</div>
+        <div class="lawCardSummary">${escapeHtml(payload.error || "")}</div>
+      </div>
+    `;
+  }
+
+  if (!payload.found) {
+    return `
+      <div class="lawCard">
+        <div class="lawCardTitle">${escapeHtml(c)}</div>
+        <div class="lawCardSub">(등록된 법령 정보가 없어요)</div>
+      </div>
+    `;
+  }
+
+  const ref = payload.data || {};
+  const urlHtml = ref.url
+    ? `<div class="lawCardLink"><a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener">법령 링크 열기</a></div>`
+    : "";
+
+  return `
+    <div class="lawCard">
+      <div class="lawCardTop">
+        <div class="lawCardTitle">${escapeHtml(c)} · ${escapeHtml(ref.title || "")}</div>
+        <div class="lawCardDate">${escapeHtml(ref.updated_at || "")}</div>
+      </div>
+      <div class="lawCardMeta">${escapeHtml(ref.law_name || "")} ${escapeHtml(ref.article || "")}</div>
+      <div class="lawCardSummary">${escapeHtml(ref.summary || "")}</div>
+      ${urlHtml}
+    </div>
+  `;
+}
+
+// ✅ item panel 열릴 때: refs 전체를 bulk로 로드 후, placeholder들을 한 번에 갱신
+async function loadLawPanelForItem(itemId) {
+  const item = (_currentChecklistItems || []).find((x) => x.id === itemId);
+  if (!item) return;
+
+  const refs = Array.isArray(item.refs) ? item.refs : [];
+  if (!refs.length) return;
+
+  // 중복 로딩 방지(item 단위)
+  const lockKey = String(itemId || "");
+  if (_lawLoading.has(lockKey)) return;
+  _lawLoading.add(lockKey);
+
+  try {
+    // 우선 로딩 UI(placeholder는 이미 있음. 그래도 사용자 피드백)
+    refs.forEach((code) => {
+      const cid = `lawcard_${itemId}_${code}`;
+      const el = $(cid);
+      if (!el) return;
+      el.innerHTML = `
+        <div class="lawCard">
+          <div class="lawCardTitle">${escapeHtml(code)}</div>
+          <div class="lawCardSub">불러오는 중...</div>
+        </div>
+      `;
+    });
+
+    await fetchLawsByCodesBulk(refs);
+
+    // 캐시 기반으로 렌더
+    refs.forEach((code) => {
+      const cid = `lawcard_${itemId}_${code}`;
+      const el = $(cid);
+      if (!el) return;
+
+      const cached = _lawCache.get(code);
+      if (cached) el.innerHTML = renderLawCardHtml(code, cached);
+      else {
+        el.innerHTML = `
+          <div class="lawCard">
+            <div class="lawCardTitle">${escapeHtml(code)}</div>
+            <div class="lawCardSub">(정보 없음)</div>
+          </div>
+        `;
+      }
+    });
+  } finally {
+    _lawLoading.delete(lockKey);
+  }
 }
 
 /* =========================
@@ -242,7 +457,6 @@ function autofillChecklistInputsFromCalc({ onlyEmpty = true } = {}) {
       // 입력 누락 강조가 남아있을 수 있어 제거
       const checklistId = el.getAttribute("data-checklist-id");
       if (checklistId) {
-        // 해당 키에 대한 missing 힌트만 제거(전체 clear는 과할 수 있어 key 단위로만)
         delete el.dataset.missing;
         const hintId = `missing_hint_${checklistId}_${key}`;
         const hint = document.getElementById(hintId);
@@ -304,7 +518,6 @@ function buildAppliesToHint(it) {
   const parts = [];
   const needs = [];
 
-  // zoning/use/jurisdiction 조건은 "표시 이유"가 아니라 "적용 범위" 설명이므로 간단히
   if (Array.isArray(a.zoning_in) && a.zoning_in.length > 0) {
     parts.push(`용도지역: ${a.zoning_in.join(" · ")}`);
   }
@@ -315,7 +528,6 @@ function buildAppliesToHint(it) {
     parts.push(`지자체: ${a.jurisdiction_in.join(" · ")}`);
   }
 
-  // 숫자 조건은 "현재값" 표시
   if (a.min_gross_area_m2 != null) {
     const th = toNumSafe(a.min_gross_area_m2);
     const cur = getCurrentKnownValue("gross_area_m2");
@@ -330,7 +542,6 @@ function buildAppliesToHint(it) {
     else parts.push(`층수 ≥ ${fmt(th)} (현재: ${fmt(cur)})`);
   }
 
-  // 미래 확장 대비
   if (a.min_height_m != null) {
     const th = toNumSafe(a.min_height_m);
     const cur = getCurrentKnownValue("height_m");
@@ -617,7 +828,6 @@ function renderChecklist(items, opts = {}) {
   _currentChecklistItems = _renderedChecklist;
 
   if (!items || items.length === 0) {
-    // ✅ 숨김은 style + class 모두 정리 (HTML 초기 상태가 어떻든 안전)
     card.style.display = "none";
     card.classList.add("is-hidden");
     list.innerHTML = "";
@@ -626,11 +836,9 @@ function renderChecklist(items, opts = {}) {
     return;
   }
 
-  // ✅ 표시 시에는 style + class 모두 정리 (예전 HTML의 is-hidden 잔존 대비)
   card.style.display = "block";
   card.classList.remove("is-hidden");
 
-  // ✅ allow면 기본 접힘(요약), conditional/deny/need_input면 펼침
   const shouldCollapse = status === "allow";
 
   const headerTitle =
@@ -655,7 +863,6 @@ function renderChecklist(items, opts = {}) {
       ? "입력값이 부족해요. 아래 항목을 입력하면 서버가 자동으로 판정해줘요."
       : "항목을 입력하면 자동/서버 판정이 반영됩니다.";
 
-  // body 표시/숨김은 클래스 기반
   const bodyHiddenClass = shouldCollapse ? "is-hidden" : "";
 
   const headerHtml = `
@@ -712,39 +919,20 @@ function renderChecklist(items, opts = {}) {
 
       const refs = Array.isArray(it.refs) ? it.refs : [];
       const refsText = refs.join(", ");
-      const lawMap = it?.laws || {};
+      const hasRefs = refs.length > 0;
 
       const refsCards = refs
         .map((code) => {
-          const ref = lawMap?.[code];
-          if (!ref) {
-            return `
+          return `
+            <div id="lawcard_${escapeHtml(it.id)}_${escapeHtml(code)}">
               <div class="lawCard">
                 <div class="lawCardTitle">${escapeHtml(code)}</div>
-                <div class="lawCardSub">(laws.json에 정보가 없어요)</div>
+                <div class="lawCardSub">열면 자동으로 불러와요</div>
               </div>
-            `;
-          }
-
-          const urlHtml = ref.url
-            ? `<div class="lawCardLink"><a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener">법령 링크 열기</a></div>`
-            : "";
-
-          return `
-            <div class="lawCard">
-              <div class="lawCardTop">
-                <div class="lawCardTitle">${escapeHtml(code)} · ${escapeHtml(ref.title)}</div>
-                <div class="lawCardDate">${escapeHtml(ref.updated_at || "")}</div>
-              </div>
-              <div class="lawCardMeta">${escapeHtml(ref.law_name || "")} ${escapeHtml(ref.article || "")}</div>
-              <div class="lawCardSummary">${escapeHtml(ref.summary || "")}</div>
-              ${urlHtml}
             </div>
           `;
         })
         .join("");
-
-      const hasRefs = refs.length > 0;
 
       return `
         <div class="clItem">
@@ -767,7 +955,7 @@ function renderChecklist(items, opts = {}) {
                 <button type="button" class="ghost clLawsBtn" data-toggle-laws="${escapeHtml(it.id)}">
                   📖 근거 법령 보기
                 </button>
-                <div id="laws_${escapeHtml(it.id)}" class="lawsPanel is-hidden">
+                <div id="laws_${escapeHtml(it.id)}" class="lawsPanel is-hidden" data-laws-panel="1">
                   ${refsCards}
                 </div>
               </div>
@@ -787,7 +975,7 @@ function renderChecklist(items, opts = {}) {
   if (!list._delegationBound) {
     list._delegationBound = true;
 
-    list.addEventListener("click", (e) => {
+    list.addEventListener("click", async (e) => {
       // (0) 전체 접기/펼치기
       const allBtn = e.target?.closest?.("button[data-toggle-checklist]");
       if (allBtn) {
@@ -798,12 +986,11 @@ function renderChecklist(items, opts = {}) {
         if (isHidden) body.classList.remove("is-hidden");
         else body.classList.add("is-hidden");
 
-        // ✅ 토글 후 상태 기반으로 버튼 텍스트 동기화
         allBtn.textContent = body.classList.contains("is-hidden") ? "펼치기" : "접기";
         return;
       }
 
-      // (1) 법령 토글
+      // (1) 법령 토글 + lazy-load (bulk)
       const btn = e.target?.closest?.("button[data-toggle-laws]");
       if (!btn) return;
 
@@ -811,7 +998,16 @@ function renderChecklist(items, opts = {}) {
       const panel = $(`laws_${id}`);
       if (!panel) return;
 
+      const willOpen = panel.classList.contains("is-hidden");
       panel.classList.toggle("is-hidden");
+
+      if (willOpen) {
+        try {
+          await loadLawPanelForItem(id);
+        } catch (err) {
+          console.warn("loadLawPanelForItem failed:", err);
+        }
+      }
     });
 
     // (2) 입력 변경 시 자동판정(프론트) + 서버판정(디바운스)
@@ -840,13 +1036,11 @@ function renderChecklist(items, opts = {}) {
       const msgEl = $(`judge_msg_${checklistId}`);
       if (!judgeEl || !msgEl) return;
 
-      // 프론트 auto_rules는 "즉시 피드백" 용 (서버판정이 최종)
       if (judged) {
         judgeEl.innerHTML = badgeHtml(judged.result) || escapeHtml(judged.result);
         msgEl.textContent = judged.message || "";
       }
 
-      // ✅ 서버판정은 디바운스로 따라오게
       debouncedServerJudge();
     });
   }
@@ -872,7 +1066,6 @@ function renderChecklist(items, opts = {}) {
   try {
     const { changed } = autofillChecklistInputsFromCalc({ onlyEmpty: true });
     if (changed > 0) {
-      // 즉시 서버판정(디바운스 없이)
       if (!_isAutoFillRunning) {
         _isAutoFillRunning = true;
         Promise.resolve()
@@ -887,7 +1080,6 @@ function renderChecklist(items, opts = {}) {
     console.warn("autofill after render failed:", e);
   }
 
-  // 체크리스트가 새로 뜨면 1회 서버판정(최종 갱신)
   debouncedServerJudge();
 }
 
@@ -951,13 +1143,11 @@ async function runCalc() {
       .filter(Boolean)
       .join("\n");
 
-    // ✅ (1) 계산값이 생기면 체크리스트 입력칸 자동 채움 + 서버판정 즉시 1회
     try {
       const { changed } = autofillChecklistInputsFromCalc({ onlyEmpty: true });
       if (changed > 0) {
         await runServerJudgeAndApply();
       } else {
-        // 값이 안 들어갔어도 서버판정엔 도움 되므로 디바운스 호출
         debouncedServerJudge();
       }
     } catch (e) {
@@ -965,7 +1155,6 @@ async function runCalc() {
       debouncedServerJudge();
     }
 
-    // ✅ (2) 계산값이 생기면 enriched를 재로딩해서 applies_to 관련 표시/힌트 업데이트
     try {
       const fn = window.__refreshChecklistByContext;
       if (typeof fn === "function") {
@@ -1048,8 +1237,31 @@ async function copyTalk() {
 }
 
 /* =========================
-   요약(법령 포함)
+   ✅ 요약(법령 포함)
+   - FIX: 요약 버튼 클릭 시, 체크리스트 refs를 bulk로 선로딩 후 요약 생성
 ========================= */
+
+// ✅ 현재 렌더된 체크리스트 전체에서 refs 코드 수집(요약용)
+function collectAllRefCodesFromRenderedChecklist() {
+  const set = new Set();
+  (_renderedChecklist || []).forEach((it) => {
+    const refs = Array.isArray(it?.refs) ? it.refs : [];
+    refs.forEach((c) => {
+      const cc = String(c || "").trim();
+      if (cc) set.add(cc);
+    });
+  });
+  return Array.from(set);
+}
+
+// ✅ 요약 전에 refs를 bulk로 미리 로드
+async function preloadLawsForSummary() {
+  const codes = collectAllRefCodesFromRenderedChecklist();
+  if (!codes.length) return { ok: true, codes: [], missing: [] };
+  const res = await fetchLawsByCodesBulk(codes);
+  return { ok: true, codes, missing: res?.missing || [] };
+}
+
 function buildSummaryText() {
   const addr = ($("addr")?.value || "").trim();
   const zoning = ($("zoning")?.value || "").trim();
@@ -1142,15 +1354,14 @@ function buildSummaryText() {
     lines.push("📚 근거 법령(요약)");
 
     usedRefs.forEach((code) => {
-      let ref = null;
-      for (const it of _renderedChecklist || []) {
-        if (it?.laws?.[code]) {
-          ref = it.laws[code];
-          break;
-        }
+      const cached = _lawCache.get(code);
+      const ref = cached?.found ? cached.data : null;
+      if (!ref) {
+        lines.push(`- ${code}: (정보 없음 또는 미조회)`);
+      } else {
+        const url = ref.url ? ` · ${ref.url}` : "";
+        lines.push(`- ${code}: ${ref.title} / ${ref.law_name} ${ref.article}${url}`);
       }
-      if (!ref) lines.push(`- ${code}: (정보 없음)`);
-      else lines.push(`- ${code}: ${ref.title} / ${ref.law_name} ${ref.article}`);
     });
 
     lawSummary = lines.join("\n");
@@ -1378,7 +1589,6 @@ window.addEventListener("DOMContentLoaded", () => {
       const data = await fetchJson(`/api/uses/check?zoning=${encodeURIComponent(z)}&use=${encodeURIComponent(u)}`);
       const useLabel = _useLabelMap[u] || u;
 
-      // ✅ 마지막 status 저장
       _lastUseStatus = data.status || "";
 
       setText(
@@ -1426,6 +1636,13 @@ window.addEventListener("DOMContentLoaded", () => {
     const hasChecklist = card && card.style.display !== "none" && (_renderedChecklist || []).length > 0;
     if (hasChecklist) await runServerJudgeAndApply();
 
+    // ✅ FIX: 요약 만들기 전에 refs를 bulk 선로딩
+    try {
+      await preloadLawsForSummary();
+    } catch (e) {
+      console.warn("preloadLawsForSummary failed:", e);
+    }
+
     const text = buildSummaryText();
     if (summaryBox) {
       summaryBox.innerHTML = `<pre class="summaryPre">${escapeHtml(text)}</pre>`;
@@ -1436,6 +1653,13 @@ window.addEventListener("DOMContentLoaded", () => {
     const card = $("checklistCard");
     const hasChecklist = card && card.style.display !== "none" && (_renderedChecklist || []).length > 0;
     if (hasChecklist) await runServerJudgeAndApply();
+
+    // ✅ FIX: 복사도 동일하게 refs를 bulk 선로딩
+    try {
+      await preloadLawsForSummary();
+    } catch (e) {
+      console.warn("preloadLawsForSummary failed:", e);
+    }
 
     const text = buildSummaryText();
     try {
@@ -1456,12 +1680,10 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // ✅ 같은 값 반복 호출 방지
     const key = query;
     if (_lastGeocodeKey === key && reason === "자동") return;
     _lastGeocodeKey = key;
 
-    // ✅ 이전 요청 취소
     if (_geocodeAbort) {
       try {
         _geocodeAbort.abort();
@@ -1507,7 +1729,6 @@ window.addEventListener("DOMContentLoaded", () => {
         else marker = L.marker([lat, lon]).addTo(map);
       }
 
-      // reverse로 지자체 추정
       try {
         const rdata = await fetchJson(`/api/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, {
           signal: _geocodeAbort.signal,
@@ -1517,7 +1738,6 @@ window.addEventListener("DOMContentLoaded", () => {
         console.warn("reverse failed:", e);
       }
 
-      // 좌표 기반 자동 용도지역 판정 → 룰 적용
       try {
         const zdata = await fetchJson(
           `/api/zoning/by-coord?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
@@ -1547,7 +1767,6 @@ window.addEventListener("DOMContentLoaded", () => {
             setText(ruleHint, `❌ 룰 자동 적용 실패: ${escapeHtml(String(e))}`);
           }
 
-          // 기본 용도 자동 세팅 + 자동 판정
           const defaultUse = "RES_HOUSE";
           if (_usesLoaded && useSelect) {
             useSelect.value = defaultUse;
@@ -1579,12 +1798,10 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // 버튼 클릭
   addrBtn?.addEventListener("click", async () => {
     await runGeocodeFlow(addrInput?.value || "", { reason: "수동" });
   });
 
-  // 엔터 실행
   addrInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -1592,7 +1809,6 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // 입력 후 멈추면 자동 실행
   const debouncedAddrAuto = debounce(() => {
     const q = (addrInput?.value || "").trim();
     if (q.length < 6) return;

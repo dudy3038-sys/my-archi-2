@@ -76,12 +76,6 @@ input:focus, textarea:focus, select:focus{
   box-shadow: 0 0 0 3px var(--focus);
 }
 
-/* ✅ 누락 입력(missing) 상태: JS가 data-missing="1"만 세팅하면 CSS가 표현 */
-input[data-missing="1"]{
-  border-color: var(--bad) !important;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, .25) !important;
-}
-
 /* number input 스핀 버튼(크롬) 너무 튀는거 완화 */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button{
@@ -185,14 +179,15 @@ button:disabled{
   border:1px dashed var(--line);
   background: rgba(0,0,0,.10);
   border-radius: var(--radius);
+  padding:12px; /* ✅ 추가: 카드 내부 여백 */
 }
 
 /* ✅ 체크리스트 상단 서버판정 바/노트 (index.html 인라인 제거용) */
 .checklistServerBar{
-  margin-bottom:10px;
+  margin:0 0 10px;
 }
 .checklistNote{
-  margin-bottom:12px;
+  margin:0 0 12px;
   line-height:1.45;
 }
 
@@ -206,9 +201,12 @@ button:disabled{
   background: rgba(0,0,0,.10);
 }
 
-/* 체크리스트 항목 간격 */
-#checklistList > div{
-  padding-top:12px;
+/* ✅ checklistList 내부 여백/구분 (기존 #checklistList > div padding-top 제거) */
+#checklistList{
+  margin-top:10px;
+}
+#checklistList:empty{
+  margin-top:0;
 }
 
 /* ✅ missing 힌트(“❗입력 필요 …”) 톤 통일 */
@@ -216,7 +214,7 @@ button:disabled{
   margin-top:6px;
   font-size:12px;
   opacity:.95;
-  color: var(--bad);
+  color: var(--warn);
 }
 
 /* ✅ judge hint 작은 텍스트 */
@@ -267,20 +265,14 @@ a:hover{
   .grid{grid-template-columns:1fr}
 }
 
-
 /* =========================================================
    ✅ script.js에서 새로 추가된 클래스들(인라인 제거용)
-   - 체크리스트 헤더/바디/아이템/법령 패널
-   - 배지(allow/conditional/deny/need_input/unknown)
-   - 요약 pre / 작은 보조 텍스트들
 ========================================================= */
 
 /* 공용: 흐린 inline 텍스트 */
-.inlineDim{
-  opacity:.75;
-}
+.inlineDim{ opacity:.75; }
 
-/* 계산 note(기존 script.js에서 class로 변경) */
+/* 계산 note */
 .calcNote{
   opacity:.85;
   margin-top:8px;
@@ -312,7 +304,7 @@ a:hover{
 .ruleAutoDone{ margin-top:6px; opacity:.9; }
 .ruleAutoJuris{ margin-top:6px; opacity:.9; }
 
-/* 요약 pre (script.js에서 summaryPre 사용) */
+/* 요약 pre */
 .summaryPre{
   white-space:pre-wrap;
   margin:0;
@@ -343,19 +335,18 @@ a:hover{
   margin-top:6px;
   line-height:1.45;
 }
-.clToggleAllBtn{
-  white-space:nowrap;
-}
+.clToggleAllBtn{ white-space:nowrap; }
 
 /* 체크리스트 body wrapper */
-.clBody{
-  display:block;
-}
+.clBody{ display:block; }
 
 /* 체크리스트 item */
 .clItem{
   padding:12px 0;
   border-top:1px solid rgba(255,255,255,.10);
+}
+.clItem:first-of-type{
+  border-top:0;
 }
 .clItemTop{
   display:flex;
@@ -363,9 +354,7 @@ a:hover{
   justify-content:space-between;
   gap:10px;
 }
-.clItemTitle{
-  font-weight:800;
-}
+.clItemTitle{ font-weight:800; }
 .clJudge{
   font-size:12px;
   opacity:.95;
@@ -377,7 +366,7 @@ a:hover{
   margin-top:6px;
 }
 
-/* ✅ NEW: applies_to 힌트(“조건: … / 현재: …”) */
+/* applies_to 힌트 */
 .clAppliesTo{
   display:inline-flex;
   align-items:center;
@@ -409,10 +398,7 @@ a:hover{
 }
 
 /* 입력 라벨/캡션/인풋 */
-.clInputLabel{
-  display:block;
-  margin-top:10px;
-}
+.clInputLabel{ display:block; margin-top:10px; }
 .clInputCaption{
   display:block;
   margin-bottom:6px;
@@ -420,9 +406,7 @@ a:hover{
   opacity:.9;
   color: var(--muted);
 }
-.clInput{
-  width:100%;
-}
+.clInput{ width:100%; }
 
 /* 근거 refs */
 .clRefs{
@@ -432,15 +416,7 @@ a:hover{
 }
 
 /* 법령 영역 */
-.clLaws{
-  margin-top:10px;
-}
-.clLawsBtn{}
-
-/* 법령 패널 */
-.lawsPanel{
-  margin-top:10px;
-}
+.clLaws{ margin-top:10px; }
 
 /* 판정 메시지 */
 .clJudgeMsg{
@@ -450,23 +426,36 @@ a:hover{
   line-height:1.45;
 }
 
+/* =========================
+   ✅ LAW PANEL + LAW CARD
+========================= */
+
+/* 법령 패널(펼쳤을 때 구획감) */
+.lawsPanel{
+  margin-top:10px;
+  padding:10px;
+  border:1px dashed rgba(255,255,255,.14);
+  border-radius:14px;
+  background: rgba(0,0,0,.10);
+}
+
 /* 법령 카드 */
 .lawCard{
-  margin-top:10px;
   padding:12px;
   border:1px solid var(--line);
   border-radius:12px;
   background: rgba(0,0,0,.18);
 }
+.lawsPanel .lawCard{ margin-top:0; }
+.lawsPanel > div + div{ margin-top:10px; }
+
 .lawCardTop{
   display:flex;
   justify-content:space-between;
   gap:8px;
   align-items:flex-start;
 }
-.lawCardTitle{
-  font-weight:900;
-}
+.lawCardTitle{ font-weight:900; }
 .lawCardDate{
   opacity:.8;
   font-size:12px;
@@ -493,12 +482,50 @@ a:hover{
   font-size:12px;
 }
 
-/* ✅ 판정 배지(색상) */
+/* =========================
+   ✅ JUDGE BADGE (pill)
+========================= */
 .judgeBadge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  font-size:12px;
   font-weight:900;
+  line-height:1;
 }
-.judgeBadge--allow{ color: var(--good); }
-.judgeBadge--conditional{ color: var(--warn); }
-.judgeBadge--deny{ color: var(--bad); }
-.judgeBadge--need_input{ color: var(--warn); }
-.judgeBadge--unknown{ color: var(--warn); }
+
+.judgeBadge--allow{
+  color: var(--good);
+  border-color: rgba(34,197,94,.35);
+  background: rgba(34,197,94,.10);
+}
+.judgeBadge--conditional{
+  color: var(--warn);
+  border-color: rgba(245,158,11,.40);
+  background: rgba(245,158,11,.10);
+}
+.judgeBadge--deny{
+  color: var(--bad);
+  border-color: rgba(239,68,68,.40);
+  background: rgba(239,68,68,.10);
+}
+.judgeBadge--need_input{
+  color: var(--warn);
+  border-color: rgba(96,165,250,.35);
+  background: rgba(96,165,250,.10);
+}
+.judgeBadge--unknown{
+  color: var(--muted);
+  border-color: rgba(255,255,255,.14);
+  background: rgba(255,255,255,.05);
+}
+
+/* 입력 누락 강조는 "주의" 톤 */
+input[data-missing="1"]{
+  border-color: var(--warn) !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, .22) !important;
+}

@@ -7,8 +7,22 @@
     "url": "",
     "updated_at": "2026-02-02",
     "tags": ["접도", "도로", "대지요건"],
-    "notes": ["초기 샘플입니다. 실제 조문/링크는 추후 확정하세요."]
+    "notes": [
+      "초기 샘플입니다. 실제 조문/링크는 추후 확정하세요.",
+      "url은 사용자가 클릭해 열기 위한 링크(있으면 표시됨)."
+    ],
+    "source": {
+      "provider": "law.go.kr",
+      "type": "statute",
+      "jurisdiction": "KR",
+      "lsiSeq": "",
+      "article_hint": "건축법 제44조(대지와 도로)",
+      "link_policy": "lsiSeq는 개정 시 변경될 수 있어 주기적 확인/갱신 권장",
+      "last_verified_at": ""
+    },
+    "keywords": ["접도", "도로", "대지", "현황도로", "확폭", "건축허가"]
   },
+
   "PARK-ORD-01": {
     "title": "주차대수 산정",
     "law_name": "주차장법 및 지자체 주차조례",
@@ -17,8 +31,22 @@
     "url": "",
     "updated_at": "2026-02-02",
     "tags": ["주차", "조례"],
-    "notes": ["지자체별로 크게 달라서 주소(지자체) 확정 후 조례를 링크로 붙이는 구조를 권장합니다."]
+    "notes": [
+      "지자체별로 크게 달라서 주소(지자체) 확정 후 조례를 링크로 붙이는 구조를 권장합니다.",
+      "이 항목은 '전국 공통 1개 링크'보다 '지자체별 링크 매핑'이 더 실무적입니다."
+    ],
+    "source": {
+      "provider": "local_ordinance",
+      "type": "bylaw",
+      "jurisdiction": "",
+      "ordinance_name_hint": "주차장 설치 및 관리 조례(지자체별 상이)",
+      "table_hint": "별표(주차대수 산정기준)",
+      "link_policy": "지자체 확정 후 조례 링크를 url에 입력",
+      "last_verified_at": ""
+    },
+    "keywords": ["주차", "부설주차장", "주차대수", "별표", "조례", "용도별 기준"]
   },
+
   "BLD-ACT-61": {
     "title": "일조 관련 제한(사선/높이 등)",
     "law_name": "건축법 및 관련 고시/조례",
@@ -27,8 +55,34 @@
     "url": "",
     "updated_at": "2026-02-02",
     "tags": ["일조", "사선", "높이"],
-    "notes": ["정확한 판단은 지역/지구단위/대지 조건 필요"]
+    "notes": [
+      "정확한 판단은 지역/지구단위/대지 조건 필요",
+      "일조/사선은 법령+고시+조례+대지형상(방위/경사/도로폭 등) 조합으로 변동"
+    ],
+    "source": {
+      "provider": "law.go.kr",
+      "type": "statute_plus",
+      "jurisdiction": "KR",
+      "lsiSeq": "",
+      "article_hint": "건축법 제61조(일조 등의 확보를 위한 건축물의 높이 제한)",
+      "related_docs": [
+        {
+          "type": "notice_or_guideline",
+          "name_hint": "일조 관련 고시/기준(해당 시)",
+          "url": ""
+        },
+        {
+          "type": "local_bylaw",
+          "name_hint": "지자체 조례/지구단위계획(해당 시)",
+          "url": ""
+        }
+      ],
+      "link_policy": "법령 링크 + 지역별(고시/조례) 링크를 함께 관리하는 것을 권장",
+      "last_verified_at": ""
+    },
+    "keywords": ["일조", "사선", "높이제한", "이격", "주거지역", "인접대지"]
   },
+
   "FIRE-REG-05": {
     "title": "피난/방화 기준 강화 조건",
     "law_name": "건축물의 피난·방화구조 등의 기준에 관한 규칙",
@@ -37,6 +91,19 @@
     "url": "",
     "updated_at": "2026-02-02",
     "tags": ["피난", "방화", "계단"],
-    "notes": ["실제 조문 번호/링크는 추후 확정"]
+    "notes": [
+      "실제 조문 번호/링크는 추후 확정",
+      "실무에서는 용도+층수+연면적+피난층 구성에 따라 적용 기준이 달라집니다."
+    ],
+    "source": {
+      "provider": "law.go.kr",
+      "type": "regulation",
+      "jurisdiction": "KR",
+      "lsiSeq": "",
+      "article_hint": "피난·방화구조 규칙(피난계단/방화구획/내화 등 관련 조항)",
+      "link_policy": "규칙 본문 링크(url) + 필요한 경우 특정 조문 근거를 notes에 기록",
+      "last_verified_at": ""
+    },
+    "keywords": ["피난계단", "특별피난계단", "방화구획", "내화", "연면적", "층수"]
   }
 }

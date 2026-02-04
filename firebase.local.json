@@ -16,10 +16,13 @@
     ]
   },
   "emulators": {
-    "hub": { "host": "127.0.0.1" },
-    "ui": { "host": "127.0.0.1" },
-    "logging": { "host": "127.0.0.1" },
-    "hosting": { "host": "127.0.0.1" },
-    "functions": { "host": "127.0.0.1" }
+    "hub": { "host": "127.0.0.1", "port": 4400 },
+    "ui": { "host": "127.0.0.1", "port": 4000 },
+    "logging": { "host": "127.0.0.1", "port": 4500 },
+
+    "hosting": { "host": "127.0.0.1", "port": 5000 },
+    "functions": { "host": "127.0.0.1", "port": 5001 },
+
+    "firestore": { "host": "127.0.0.1", "port": 8080 }
   }
 }
