@@ -68,7 +68,10 @@ export async function onRequest(context) {
 
       const maxBuildingArea_m2 = (site * coverage) / 100;
       const maxTotalFloorArea_m2 = (site * far) / 100;
-      const estFloors = Math.max(1, Math.floor(maxTotalFloorArea_m2 / Math.max(1, maxBuildingArea_m2)));
+      const estFloors = Math.max(
+        1,
+        Math.floor(maxTotalFloorArea_m2 / Math.max(1, maxBuildingArea_m2))
+      );
       const estHeight_m = estFloors * floor;
 
       return json({
@@ -183,15 +186,28 @@ export async function onRequest(context) {
       (await assetJson("/rules/laws.json")) ||
       (await assetJson("/public/rules/laws.json"));
 
+    // ✅ base_rules.json 포맷 차이 흡수:
+    // - 구버전: { zoning_rules: [...] }
+    // - 신버전: { rules: [...] }  (네 현재 파일)
+    const getZoningRulesArray = (base) => {
+      const a =
+        (Array.isArray(base?.zoning_rules) && base.zoning_rules) ||
+        (Array.isArray(base?.rules) && base.rules) ||
+        [];
+      return a;
+    };
+
     // ---------- route: /api/rules/zoning ----------
     if (segs[0] === "rules" && segs[1] === "zoning" && method === "GET") {
       const base = await loadBaseRules();
-      const list =
-        base?.zoning_rules?.map?.((x) => x?.zoning).filter(Boolean) ||
-        base?.zoning_list ||
-        base?.zonings ||
-        [];
-      const uniq = Array.from(new Set(list.map(String)));
+      const rulesArr = getZoningRulesArray(base);
+
+      const list = rulesArr
+        .map((x) => x?.zoning)
+        .filter(Boolean)
+        .map(String);
+
+      const uniq = Array.from(new Set(list));
       return json({ ok: true, list: uniq });
     }
 
@@ -202,12 +218,18 @@ export async function onRequest(context) {
       if (!zoning) return json({ ok: false, error: "missing_zoning" }, 400);
 
       const base = await loadBaseRules();
+      const rulesArr = getZoningRulesArray(base);
+
       const zr =
-        (base?.zoning_rules || []).find((r) => String(r?.zoning || "") === zoning) ||
+        rulesArr.find((r) => String(r?.zoning || "") === zoning) ||
         null;
 
       if (!zr) {
-        return json({ ok: true, rule: { zoning, bcr_max: null, far_max: null }, note: "zoning rule not found" });
+        return json({
+          ok: true,
+          rule: { zoning, bcr_max: null, far_max: null },
+          note: "zoning rule not found",
+        });
       }
 
       return json({
@@ -306,7 +328,10 @@ export async function onRequest(context) {
         for (const k of needKeys) {
           const v = values?.[k];
           const miss =
-            v === undefined || v === null || (typeof v === "string" && v.trim() === "") || (typeof v === "number" && !Number.isFinite(v));
+            v === undefined ||
+            v === null ||
+            (typeof v === "string" && v.trim() === "") ||
+            (typeof v === "number" && !Number.isFinite(v));
           if (miss) missing_inputs.push({ key: k, label: k });
         }
 
