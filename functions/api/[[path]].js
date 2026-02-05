@@ -1,7 +1,7 @@
-// public/functions/api/[[path]].js
+// functions/api/[[path]].js
 // Cloudflare Pages Functions catch-all API router
 // - Frontend calls /api/*
-// - This file must live under: public/functions/api/[[path]].js
+// - This file must live under: functions/api/[[path]].js
 
 export async function onRequest(context) {
   const { request, env, params } = context;
