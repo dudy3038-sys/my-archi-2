@@ -1,0 +1,107 @@
+{
+  "BLD-ACT-44": {
+    "title": "도로 접도 조건",
+    "law_name": "건축법",
+    "article": { "type": "article", "label": "제44조" },
+    "summary": "건축물은 일정 기준을 만족하는 도로에 접해야 합니다. 접도 요건은 대지 여건·현황도로·확폭 여부 등과 함께 종합 검토가 필요합니다.",
+    "url": "",
+    "display_mode": "placeholder_link",
+    "updated_at": "2026-02-05",
+    "tags": ["접도", "도로", "대지요건"],
+    "source": {
+      "provider": "law.go.kr",
+      "type": "statute",
+      "jurisdiction": "KR",
+      "article_hint": "건축법 제44조(대지와 도로)"
+    },
+    "practical_notes": [
+      "도로 폭 부족 시 건축선 후퇴로 해결 가능한지 검토",
+      "현황도로 인정 여부는 지자체 판단 사항",
+      "막다른도로·사도·비법정도로 여부 확인 필요",
+      "건축허가 단계에서 가장 먼저 제한되는 항목 중 하나"
+    ],
+    "designer_checkpoints": [
+      "대지 전면이 도로에 실제 접하는지",
+      "도로 폭 측정 기준(유효폭 vs 현황폭)",
+      "확폭 예정 도로 여부"
+    ]
+  },
+
+  "PARK-ORD-01": {
+    "title": "주차대수 산정",
+    "law_name": "주차장법 및 지자체 조례",
+    "article": { "type": "appendix", "label": "조례 별표 기준" },
+    "summary": "건축물 용도와 연면적 등에 따라 법정 주차대수가 달라지며, 지자체 주차조례 확인이 필수입니다.",
+    "url": "",
+    "display_mode": "placeholder_link",
+    "updated_at": "2026-02-05",
+    "tags": ["주차", "조례"],
+    "source": {
+      "provider": "local_ordinance",
+      "type": "bylaw",
+      "jurisdiction": "KR"
+    },
+    "practical_notes": [
+      "주차는 법령보다 조례 영향이 더 큼",
+      "기계식 주차 허용 여부 지자체별 상이",
+      "완화 조건(소형주택, 역세권 등) 여부 확인 필요"
+    ],
+    "designer_checkpoints": [
+      "용도별 주차대수 산정 기준 적용",
+      "장애인 주차면 포함 여부",
+      "부설주차장 설치 위치 제한"
+    ]
+  },
+
+  "BLD-ACT-61": {
+    "title": "일조 관련 제한",
+    "law_name": "건축법 및 관련 고시/조례",
+    "article": { "type": "multi", "label": "제61조 등" },
+    "summary": "주거지역 등에서 인접 대지의 일조 확보를 위해 건축물 높이 및 이격이 제한될 수 있습니다.",
+    "url": "",
+    "display_mode": "placeholder_link",
+    "updated_at": "2026-02-05",
+    "tags": ["일조", "사선", "높이제한"],
+    "source": {
+      "provider": "law.go.kr",
+      "type": "statute_plus",
+      "jurisdiction": "KR"
+    },
+    "practical_notes": [
+      "도로 사선·인접대지 사선이 중첩 적용될 수 있음",
+      "대지 형상·방위에 따라 적용식 달라짐",
+      "층수 증가 시 사선 영향 급격히 커짐"
+    ],
+    "designer_checkpoints": [
+      "대지 경계에서의 이격 거리 확인",
+      "일조권 사선 적용 시작 높이",
+      "지구단위계획에서 별도 높이 제한 존재 여부"
+    ]
+  },
+
+  "FIRE-REG-05": {
+    "title": "피난/방화 기준 강화 조건",
+    "law_name": "건축물의 피난·방화구조 등의 기준에 관한 규칙",
+    "article": { "type": "related", "label": "관련 조항" },
+    "summary": "층수와 연면적, 용도에 따라 피난계단, 방화구획 등 요구조건이 강화될 수 있습니다.",
+    "url": "",
+    "display_mode": "placeholder_link",
+    "updated_at": "2026-02-05",
+    "tags": ["피난", "방화", "계단"],
+    "source": {
+      "provider": "law.go.kr",
+      "type": "regulation",
+      "jurisdiction": "KR"
+    },
+    "practical_notes": [
+      "특별피난계단 적용 기준은 층수+용도 조합",
+      "방화구획은 연면적 증가 시 급격히 복잡해짐",
+      "내화구조 대상 여부 조기 판단 중요"
+    ],
+    "designer_checkpoints": [
+      "직통계단 개수",
+      "피난거리 계산",
+      "방화구획 면적 기준"
+    ]
+  }
+}
