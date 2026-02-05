@@ -1,4 +1,4 @@
-// public/script.js
+// public/script.js (FULL REPLACE)
 let map;
 let marker;
 let lastCalcResult = null;
@@ -88,21 +88,29 @@ function setText(el, html) {
   el.innerHTML = html;
 }
 
-// fetch JSON helper
+/**
+ * ✅ fetch JSON helper (안정 버전)
+ * - 기존 버그: r.json() 실패 후 r.text() 재호출 시 body stream 소진 문제 가능
+ * - 해결: text로 1회 읽고 JSON 파싱
+ */
 async function fetchJson(url, options) {
   const r = await fetch(url, options);
+
+  const rawText = await r.text().catch(() => "");
   let data = null;
+
   try {
-    data = await r.json();
+    data = rawText ? JSON.parse(rawText) : null;
   } catch (e) {
-    const txt = await r.text().catch(() => "");
     throw new Error(
-      `응답 파싱 실패: ${r.status} ${r.statusText} ${txt ? `(${txt.slice(0, 120)}...)` : ""}`
+      `응답 파싱 실패: ${r.status} ${r.statusText} ${rawText ? `(${rawText.slice(0, 160)}...)` : ""}`
     );
   }
+
   if (!r.ok || !data?.ok) {
     throw new Error(String(data?.error || r.statusText || "request failed"));
   }
+
   return data;
 }
 
@@ -144,8 +152,6 @@ function badgeHtml(statusRaw) {
 
 /* =========================
    ✅ 법령 상세(클릭 시 로드)
-   - FIX1: /api/laws?codes 응답은 res.list 사용
-   - FIX2: item 단위로 bulk 로드(한 번에)
 ========================= */
 
 // 단일 코드 조회(가능하면 /api/laws/:code)
@@ -170,7 +176,7 @@ async function fetchLawByCode(code) {
     // fallback: bulk endpoint로 단일 코드 조회
     try {
       const res2 = await fetchJson(`/api/laws${buildQuery({ codes: c })}`);
-      const picked = res2?.list?.[c] || null; // ✅ FIX: list
+      const picked = res2?.list?.[c] || null;
       const out2 = {
         ok: true,
         found: !!picked,
@@ -223,7 +229,7 @@ async function fetchLawsByCodesBulk(codes) {
   // bulk 호출 1회
   try {
     const res = await fetchJson(`/api/laws${buildQuery({ codes: need.join(",") })}`);
-    const list = res?.list || {}; // ✅ 서버 스펙: list
+    const list = res?.list || {};
     const missing = Array.isArray(res?.missing) ? res.missing : [];
 
     // 캐시에 주입
@@ -233,12 +239,10 @@ async function fetchLawsByCodesBulk(codes) {
       } else if (missing.includes(c)) {
         _lawCache.set(c, { ok: true, found: false, code: c, data: null, source: res.source || "api_laws_bulk" });
       } else {
-        // 혹시 서버가 missing을 안주거나, 예상치 못한 경우
         _lawCache.set(c, { ok: true, found: false, code: c, data: null, source: res.source || "api_laws_bulk" });
       }
     });
 
-    // 반환 합치기
     return { ok: true, list: { ...listFromCache, ...list }, missing };
   } catch (e) {
     // bulk 실패 시 단일로 degrade
@@ -316,7 +320,6 @@ async function loadLawPanelForItem(itemId) {
   _lawLoading.add(lockKey);
 
   try {
-    // 우선 로딩 UI(placeholder는 이미 있음. 그래도 사용자 피드백)
     refs.forEach((code) => {
       const cid = `lawcard_${itemId}_${code}`;
       const el = $(cid);
@@ -331,7 +334,6 @@ async function loadLawPanelForItem(itemId) {
 
     await fetchLawsByCodesBulk(refs);
 
-    // 캐시 기반으로 렌더
     refs.forEach((code) => {
       const cid = `lawcard_${itemId}_${code}`;
       const el = $(cid);
@@ -355,8 +357,6 @@ async function loadLawPanelForItem(itemId) {
 
 /* =========================
    ✅ 입력칸 누락 강조(need_input UX)
-   - JS는 data-missing="1"만 세팅
-   - 인라인 스타일은 사용하지 않음
 ========================= */
 function clearMissingMarks(checklistId) {
   const list = $("checklistList");
@@ -364,10 +364,8 @@ function clearMissingMarks(checklistId) {
 
   const inputs = list.querySelectorAll(`input[data-checklist-id="${checklistId}"][data-input-key]`);
   inputs.forEach((el) => {
-    // ✅ CSS용 플래그만 제거
     delete el.dataset.missing;
 
-    // 안내문 제거
     const hintId = `missing_hint_${checklistId}_${el.getAttribute("data-input-key")}`;
     const hint = document.getElementById(hintId);
     if (hint) hint.remove();
@@ -390,7 +388,6 @@ function markMissingInputs(checklistId, missingInputs) {
     );
     if (!inputEl) return;
 
-    // ✅ CSS가 처리하도록 data-missing만 세팅
     inputEl.dataset.missing = "1";
 
     const label = String(m?.label || key).trim();
@@ -403,7 +400,6 @@ function markMissingInputs(checklistId, missingInputs) {
     hint.className = "missing-hint";
     hint.textContent = `❗ 입력 필요: ${label}`;
 
-    // input 바로 다음에 삽입
     inputEl.insertAdjacentElement("afterend", hint);
   });
 }
@@ -416,7 +412,6 @@ function buildEnrichedExtraFromCalc() {
   const r = lastCalcResult?.result;
   if (!r) return extra;
 
-  // 서버 expects: floors, height_m, gross_area_m2
   if (Number.isFinite(Number(r.estFloors))) extra.floors = Number(r.estFloors);
   if (Number.isFinite(Number(r.estHeight_m))) extra.height_m = Number(r.estHeight_m);
 
@@ -438,7 +433,7 @@ function autofillChecklistInputsFromCalc({ onlyEmpty = true } = {}) {
   const map = {
     floors: r.estFloors,
     height_m: r.estHeight_m,
-    gross_area_m2: r.maxTotalFloorArea_m2, // 참고용 최대치
+    gross_area_m2: r.maxTotalFloorArea_m2,
   };
 
   let changed = 0;
@@ -454,7 +449,6 @@ function autofillChecklistInputsFromCalc({ onlyEmpty = true } = {}) {
       el.value = String(Number(val));
       changed += 1;
 
-      // 입력 누락 강조가 남아있을 수 있어 제거
       const checklistId = el.getAttribute("data-checklist-id");
       if (checklistId) {
         delete el.dataset.missing;
@@ -470,7 +464,6 @@ function autofillChecklistInputsFromCalc({ onlyEmpty = true } = {}) {
 
 /* =========================
    ✅ applies_to 힌트(프론트 표시용)
-   - "왜 뜨지?"를 줄이기 위한 UX
 ========================= */
 function toNumSafe(v) {
   if (v === "" || v === undefined || v === null) return null;
@@ -479,7 +472,6 @@ function toNumSafe(v) {
 }
 
 function getCurrentKnownValue(key) {
-  // 우선: calc 결과 -> 입력값 -> ctx
   const r = lastCalcResult?.result || null;
 
   if (key === "floors") {
@@ -495,7 +487,6 @@ function getCurrentKnownValue(key) {
     if (fromCalc != null) return fromCalc;
   }
 
-  // 입력칸에 이미 들어간 값이 있으면 그걸 사용
   const list = $("checklistList");
   if (list) {
     const el = list.querySelector(`input[data-input-key="${key}"]`);
@@ -505,7 +496,6 @@ function getCurrentKnownValue(key) {
     }
   }
 
-  // ctx fallback
   const v = _ctx?.[key];
   const n = toNumSafe(v);
   return n != null ? n : null;
@@ -565,7 +555,6 @@ async function loadEnrichedChecklistWithContext(extra = {}) {
     const zoning = ($("zoning")?.value || "").trim();
     const use = ($("useSelect")?.value || "").trim();
 
-    // ✅ calc 기반 컨텍스트를 기본으로 포함
     const calcExtra = buildEnrichedExtraFromCalc();
 
     const params = {
@@ -588,8 +577,6 @@ async function loadEnrichedChecklistWithContext(extra = {}) {
 /* =========================
    ✅ 자동 판정(프론트 입력 기반)
 ========================= */
-
-// 서버와 동일한 숫자 파서 느낌(빈값/NaN -> null)
 function toNumFront(v) {
   if (v === "" || v === undefined || v === null) return null;
   const n = Number(v);
@@ -661,7 +648,6 @@ function evaluateAutoRules(it, values) {
   const rules = Array.isArray(it?.auto_rules) ? it.auto_rules : [];
   if (!rules.length) return null;
 
-  // priority desc (서버와 일치)
   const sorted = rules
     .slice()
     .sort((a, b) => (toNumFront(b.priority) ?? 0) - (toNumFront(a.priority) ?? 0));
@@ -687,7 +673,6 @@ function collectValuesForServerJudge() {
   const list = $("checklistList");
   const values = {};
 
-  // 체크리스트 input들
   if (list) {
     const inputs = list.querySelectorAll("input[data-checklist-id][data-input-key]");
     inputs.forEach((el) => {
@@ -707,13 +692,10 @@ function collectValuesForServerJudge() {
     });
   }
 
-  // 계산결과에서 유용한 값 보강(있을 때만)
   if (lastCalcResult?.result) {
     const r = lastCalcResult.result;
     if (values.floors == null && Number.isFinite(Number(r.estFloors))) values.floors = Number(r.estFloors);
     if (values.height_m == null && Number.isFinite(Number(r.estHeight_m))) values.height_m = Number(r.estHeight_m);
-
-    // NOTE: 실제 연면적 확정값이 아니라 참고용(단순 최대치)
     if (values.gross_area_m2 == null && Number.isFinite(Number(r.maxTotalFloorArea_m2))) {
       values.gross_area_m2 = Number(r.maxTotalFloorArea_m2);
     }
@@ -742,7 +724,6 @@ function applyServerJudgeResults(results) {
     judgeEl.innerHTML = badgeHtml(status);
     msgEl.textContent = message || "";
 
-    // ✅ need_input이면 누락 입력 강조
     if (status === "need_input") {
       markMissingInputs(id, missingInputs);
     } else {
@@ -971,12 +952,10 @@ function renderChecklist(items, opts = {}) {
 
   list.innerHTML = `${headerHtml}${bodyOpenHtmlStart}${itemsHtml}${bodyOpenHtmlEnd}`;
 
-  // 🔒 이벤트 중복 바인딩 방지
   if (!list._delegationBound) {
     list._delegationBound = true;
 
     list.addEventListener("click", async (e) => {
-      // (0) 전체 접기/펼치기
       const allBtn = e.target?.closest?.("button[data-toggle-checklist]");
       if (allBtn) {
         const body = $("checklistBody");
@@ -990,7 +969,6 @@ function renderChecklist(items, opts = {}) {
         return;
       }
 
-      // (1) 법령 토글 + lazy-load (bulk)
       const btn = e.target?.closest?.("button[data-toggle-laws]");
       if (!btn) return;
 
@@ -1010,7 +988,6 @@ function renderChecklist(items, opts = {}) {
       }
     });
 
-    // (2) 입력 변경 시 자동판정(프론트) + 서버판정(디바운스)
     list.addEventListener("input", (e) => {
       const el = e.target;
       if (!el || el.tagName !== "INPUT") return;
@@ -1045,7 +1022,6 @@ function renderChecklist(items, opts = {}) {
     });
   }
 
-  // ✅ enriched에서 내려온 초기 server_judge + missing_inputs를 1회 반영
   items.forEach((it) => {
     const id = it.id;
     const judgeEl = $(`judge_${id}`);
@@ -1062,7 +1038,6 @@ function renderChecklist(items, opts = {}) {
     if (miss.length) markMissingInputs(id, miss);
   });
 
-  // ✅ (핵심) calc 결과가 있으면 입력칸 자동 채우고, 즉시 서버판정 1회
   try {
     const { changed } = autofillChecklistInputsFromCalc({ onlyEmpty: true });
     if (changed > 0) {
@@ -1238,7 +1213,6 @@ async function copyTalk() {
 
 /* =========================
    ✅ 요약(법령 포함)
-   - FIX: 요약 버튼 클릭 시, 체크리스트 refs를 bulk로 선로딩 후 요약 생성
 ========================= */
 
 // ✅ 현재 렌더된 체크리스트 전체에서 refs 코드 수집(요약용)
@@ -1636,7 +1610,6 @@ window.addEventListener("DOMContentLoaded", () => {
     const hasChecklist = card && card.style.display !== "none" && (_renderedChecklist || []).length > 0;
     if (hasChecklist) await runServerJudgeAndApply();
 
-    // ✅ FIX: 요약 만들기 전에 refs를 bulk 선로딩
     try {
       await preloadLawsForSummary();
     } catch (e) {
@@ -1654,7 +1627,6 @@ window.addEventListener("DOMContentLoaded", () => {
     const hasChecklist = card && card.style.display !== "none" && (_renderedChecklist || []).length > 0;
     if (hasChecklist) await runServerJudgeAndApply();
 
-    // ✅ FIX: 복사도 동일하게 refs를 bulk 선로딩
     try {
       await preloadLawsForSummary();
     } catch (e) {

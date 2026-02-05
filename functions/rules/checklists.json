@@ -1,10 +1,11 @@
 {
-  "version": "0.3.1",
-  "updated_at": "2026-02-03",
+  "version": "0.4.0",
+  "updated_at": "2026-02-05",
   "notes": [
     "UI/설명/입력 정의용 체크리스트 데이터",
     "판정 로직(rule_set/auto_rules/optional_inputs)은 rule_engine.json로 분리",
-    "주의: inputs에 넣은 key는 기본적으로 '필수 입력'으로 간주됨(= optional_inputs로 제외하지 않으면 need_input 판정 가능)"
+    "주의: inputs에 넣은 key는 기본적으로 '필수 입력'으로 간주됨(= optional_inputs로 제외하지 않으면 need_input 판정 가능)",
+    "따라서 use/jurisdiction/zoning 같은 컨텍스트 값은 inputs로 넣지 않고 applies_to로 제어하는 것을 권장"
   ],
   "default_conditional": [
     {
@@ -30,8 +31,7 @@
       "refs": ["PARK-ORD-01"],
       "applies_to": { "min_gross_area_m2": 300 },
       "notes": [
-        "샘플 기준: 연면적 300㎡ 이상에서만 표시(실제는 용도/조례별로 다름)",
-        "용도 메모(use_hint)가 필요하면: 별도 메모 UI로 처리하거나 rule_engine.json에서 optional_inputs로 제외 처리"
+        "샘플 기준: 연면적 300㎡ 이상에서만 표시(실제는 용도/조례별로 다름)"
       ]
     },
     {
@@ -60,6 +60,85 @@
         { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 2500" }
       ],
       "refs": ["FIRE-REG-05"]
+    },
+    {
+      "id": "elevator",
+      "title": "승강기 설치 검토",
+      "why": "층수/용도 등에 따라 승강기 설치 의무 또는 권장 기준이 발생할 수 있음",
+      "logic_level": "semi",
+      "category": "설비/승강기",
+      "inputs": [
+        { "key": "floors", "label": "층수", "type": "number", "placeholder": "예: 6" }
+      ],
+      "refs": ["FIRE-REG-05"],
+      "applies_to": { "min_floors": 5 },
+      "notes": [
+        "정확 기준은 용도/규모/법령·고시 기준에 따라 달라질 수 있어 조건부 검토로 처리 권장"
+      ]
+    },
+    {
+      "id": "accessibility",
+      "title": "장애인 편의시설 적용 검토",
+      "why": "시설의 종류/규모에 따라 편의시설 설치 의무가 발생할 수 있음",
+      "logic_level": "manual",
+      "category": "장애인/편의",
+      "inputs": [
+        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 1200" }
+      ],
+      "refs": ["BLD-ACT-44"],
+      "applies_to": { "min_gross_area_m2": 500 },
+      "notes": [
+        "실무에서는 용도(시설군) 기준이 핵심이라, 향후 use_in 기반 applies_to 확장을 권장"
+      ]
+    },
+    {
+      "id": "energy_plan",
+      "title": "에너지절약계획서/에너지 관련 검토",
+      "why": "일정 규모 이상 건축물은 에너지 관련 서류/기준 적용 가능성이 커짐",
+      "logic_level": "semi",
+      "category": "에너지/설비",
+      "inputs": [
+        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 3000" }
+      ],
+      "refs": [],
+      "applies_to": { "min_gross_area_m2": 2000 },
+      "notes": [
+        "정확 기준은 용도 및 적용 제도(제로에너지/에너지절약계획서 등)에 따라 달라짐"
+      ]
+    },
+    {
+      "id": "structure_fireproof",
+      "title": "구조/내화 성능 검토",
+      "why": "층수/규모가 커지면 구조형식 및 내화 성능 요구가 강화될 수 있음",
+      "logic_level": "manual",
+      "category": "구조/내화",
+      "inputs": [
+        { "key": "floors", "label": "층수", "type": "number", "placeholder": "예: 10" },
+        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 8000" }
+      ],
+      "refs": ["FIRE-REG-05"],
+      "notes": [
+        "내화/방화구획/피난 요소와 함께 검토되는 경우가 많아 추후 세분화 가능"
+      ]
+    },
+    {
+      "id": "district_plan",
+      "title": "지구단위계획/특별계획구역 적용 여부",
+      "why": "지구단위계획이 있으면 법령보다 구체적인 기준이 우선 적용될 수 있음",
+      "logic_level": "manual",
+      "category": "도시계획",
+      "inputs": [
+        {
+          "key": "district_plan_known",
+          "label": "지구단위계획 적용 여부를 알고 있나요? (0=모름, 1=해당없음, 2=해당)",
+          "type": "number",
+          "placeholder": "예: 0"
+        }
+      ],
+      "refs": [],
+      "notes": [
+        "향후: 좌표→지구단위계획 레이어 조회(외부 API/공간데이터)로 자동화 가능"
+      ]
     }
   ]
 }

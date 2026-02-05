@@ -1,6 +1,6 @@
 /**
  * functions/index.js (FULL REPLACE)
- * Node 20 + firebase-functions v7 (v2 https)
+ * Node 20 + firebase-functions v2 (https onRequest)
  *
  * Endpoints used by public/script.js:
  *  - GET  /api/__env
@@ -20,11 +20,53 @@
 
 const path = require("path");
 const fs = require("fs");
+
 const cors = require("cors");
 const express = require("express");
 
 const admin = require("firebase-admin");
 const { onRequest } = require("firebase-functions/v2/https");
+
+// -------------------------
+// Env flags
+// -------------------------
+const RULES_DIR = path.join(__dirname, "rules");
+
+// "에뮬레이터/로컬" 판별 (배포 런타임이면 false 쪽으로 수렴)
+const IS_EMULATOR =
+  process.env.FUNCTIONS_EMULATOR === "true" ||
+  !!process.env.FIREBASE_EMULATOR_HUB ||
+  !!process.env.FIRESTORE_EMULATOR_HOST;
+
+// ✅ .env 로드는 "에뮬레이터일 때만" (배포에서는 secrets/env로 주입됨)
+if (IS_EMULATOR) {
+  try {
+    require("dotenv").config({ path: path.join(__dirname, ".env") });
+  } catch (e) {
+    // dotenv 미설치/미존재여도 실행 계속
+  }
+}
+
+const FIRESTORE_LAWS = String(process.env.FIRESTORE_LAWS || "").toLowerCase() === "true";
+
+// ✅ VWorld (optional) — 좌표로 용도지역 추정
+const VWORLD_KEY = String(process.env.VWORLD_KEY || "").trim();
+
+// domain 값이 "https://..." 형태로 들어와도 안전하게 처리(호스트만 뽑아줌)
+function normalizeVworldDomain(input) {
+  const s = String(input || "").trim();
+  if (!s) return "";
+  try {
+    const u = new URL(s);
+    return u.hostname || s;
+  } catch {
+    return s.replace(/^https?:\/\//i, "").split("/")[0];
+  }
+}
+
+const VWORLD_DOMAIN = normalizeVworldDomain(process.env.VWORLD_DOMAIN);
+const VWORLD_ZONING_DATA = String(process.env.VWORLD_ZONING_DATA || "LT_C_UQ126").trim();
+const VWORLD_ENDPOINT = "https://api.vworld.kr/req/data";
 
 // -------------------------
 // Firebase Admin init
@@ -34,24 +76,6 @@ try {
 } catch (e) {
   // emulator hot-reload safe
 }
-
-// -------------------------
-// Env flags
-// -------------------------
-const RULES_DIR = path.join(__dirname, "rules");
-const IS_EMULATOR =
-  process.env.FUNCTIONS_EMULATOR === "true" ||
-  process.env.FIREBASE_EMULATOR_HUB ||
-  process.env.FIRESTORE_EMULATOR_HOST;
-
-const FIRESTORE_LAWS = String(process.env.FIRESTORE_LAWS || "").toLowerCase() === "true";
-
-// ✅ VWorld (optional) — 좌표로 용도지역 추정
-// - 키가 없으면 demo_stub으로 동작
-const VWORLD_KEY = String(process.env.VWORLD_KEY || "").trim();
-const VWORLD_DOMAIN = String(process.env.VWORLD_DOMAIN || "").trim(); // 선택(키 발급 시 도메인 제한이 걸려있다면)
-const VWORLD_ZONING_DATA = String(process.env.VWORLD_ZONING_DATA || "LT_C_UQ126").trim(); // 기본값: 문서 예시 데이터
-const VWORLD_ENDPOINT = "https://api.vworld.kr/req/data";
 
 // -------------------------
 // Express app
@@ -269,18 +293,16 @@ function passesAppliesTo(item, ctx) {
   const height_m = toNum(ctx.height_m);
   const gross_area_m2 = toNum(ctx.gross_area_m2);
 
-  if (a.min_floors != null) {
-    const th = toNum(a.min_floors);
-    if (th != null && (floors == null || floors < th)) return false;
+  function meetsMin(th, val) {
+    const t = toNum(th);
+    if (t == null) return true;
+    if (val == null) return true;
+    return val >= t;
   }
-  if (a.min_height_m != null) {
-    const th = toNum(a.min_height_m);
-    if (th != null && (height_m == null || height_m < th)) return false;
-  }
-  if (a.min_gross_area_m2 != null) {
-    const th = toNum(a.min_gross_area_m2);
-    if (th != null && (gross_area_m2 == null || gross_area_m2 < th)) return false;
-  }
+
+  if (!meetsMin(a.min_floors, floors)) return false;
+  if (!meetsMin(a.min_height_m, height_m)) return false;
+  if (!meetsMin(a.min_gross_area_m2, gross_area_m2)) return false;
 
   return true;
 }
@@ -364,19 +386,86 @@ async function getAllLaws() {
 // ✅ VWorld: zoning lookup by coord (optional)
 // -------------------------
 function buildVworldUrlForPoint({ lon, lat }) {
-  // VWorld 2D Data API 2.0: /req/data?service=data&request=GetFeature&data=...&geomFilter=POINT(x y)&key=...
   const params = new URLSearchParams();
   params.set("service", "data");
   params.set("version", "2.0");
   params.set("request", "GetFeature");
   params.set("format", "json");
   params.set("size", "1");
+  params.set("crs", "EPSG:4326");
   params.set("data", VWORLD_ZONING_DATA);
-  // EPSG:4326 default. geomFilter는 x=lon, y=lat
   params.set("geomFilter", `POINT(${lon} ${lat})`);
   params.set("key", VWORLD_KEY);
   if (VWORLD_DOMAIN) params.set("domain", VWORLD_DOMAIN);
   return `${VWORLD_ENDPOINT}?${params.toString()}`;
+}
+
+function pickFirstNonEmpty(obj, keys) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s) return s;
+  }
+  return "";
+}
+
+function parseVworldFeature(data) {
+  const root = data?.response ? data.response : data;
+
+  const status = String(root?.status || "").toUpperCase();
+  if (status !== "OK") {
+    return { ok: true, found: false, zoning: "", raw_status: status || "UNKNOWN" };
+  }
+
+  const result = root?.result || null;
+  const fc = result?.featureCollection || result?.featurecollection || result || null;
+
+  const feats = fc?.features;
+  const first = Array.isArray(feats) && feats.length ? feats[0] : null;
+  if (!first) return { ok: true, found: false, zoning: "", source: "vworld_no_features" };
+
+  const props = first?.properties || {};
+  const zoning = pickFirstNonEmpty(props, [
+    "uname",
+    "name",
+    "dname",
+    "zone_name",
+    "UQ126_NM",
+    "UQ126_NAME",
+    "LU_NM",
+    "SCLS_NM",
+  ]);
+
+  if (!zoning) {
+    return { ok: true, found: false, zoning: "", source: "vworld_no_zoning_name" };
+  }
+
+  return {
+    ok: true,
+    found: true,
+    zoning,
+    source: "vworld_data_api",
+    meta: {
+      data: VWORLD_ZONING_DATA,
+      sido_name: props?.sido_name || "",
+      sigg_name: props?.sigg_name || "",
+    },
+  };
+}
+
+async function fetchWithTimeout(url, ms, headers = {}) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, {
+      signal: ctrl.signal,
+      headers,
+    });
+    return r;
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 async function queryVworldZoning({ lon, lat }) {
@@ -385,12 +474,16 @@ async function queryVworldZoning({ lon, lat }) {
   }
 
   const url = buildVworldUrlForPoint({ lon, lat });
-  const r = await fetch(url, {
-    headers: {
+
+  // ✅ 타임아웃: 10초
+  const r = await fetchWithTimeout(
+    url,
+    10_000,
+    {
       "User-Agent": "my-archi-law-checker/0.3 (firebase-functions)",
       "Accept-Language": "ko",
-    },
-  });
+    }
+  );
 
   if (!r.ok) {
     const t = await r.text().catch(() => "");
@@ -400,32 +493,7 @@ async function queryVworldZoning({ lon, lat }) {
   const data = await r.json().catch(() => null);
   if (!data) throw new Error("vworld invalid json");
 
-  // 응답 구조는 문서상 result가 geojson 형태로 들어옴(성공 시 status=OK)
-  const status = String(data?.status || "").toUpperCase();
-  if (status !== "OK") {
-    // NOT_FOUND도 있을 수 있음
-    return { ok: true, found: false, zoning: "", source: "vworld_not_found", raw_status: status };
-  }
-
-  const featureCollection = data?.result;
-  const feats = featureCollection?.features;
-  const first = Array.isArray(feats) && feats.length ? feats[0] : null;
-
-  // 문서에 나오는 속성 예: uname(용도지역명), sido_name, sigg_name...
-  const uname = String(first?.properties?.uname || "").trim();
-  if (!uname) return { ok: true, found: false, zoning: "", source: "vworld_no_uname" };
-
-  return {
-    ok: true,
-    found: true,
-    zoning: uname,
-    source: "vworld_data_api",
-    meta: {
-      data: VWORLD_ZONING_DATA,
-      sido_name: first?.properties?.sido_name || "",
-      sigg_name: first?.properties?.sigg_name || "",
-    },
-  };
+  return parseVworldFeature(data);
 }
 
 // -------------------------
@@ -433,6 +501,7 @@ async function queryVworldZoning({ lon, lat }) {
 // -------------------------
 app.get("/api/__env", (req, res) => {
   ok(res, {
+    RUN_MODE: IS_EMULATOR ? "emulator_or_local" : "deployed_runtime",
     dirname: __dirname,
     cwd: process.cwd(),
     RULES_DIR,
@@ -442,8 +511,9 @@ app.get("/api/__env", (req, res) => {
       enabled: !!VWORLD_KEY,
       data: VWORLD_ZONING_DATA,
       has_domain: !!VWORLD_DOMAIN,
+      domain_value: VWORLD_DOMAIN || "",
+      key_hint: VWORLD_KEY ? `${VWORLD_KEY.slice(0, 4)}****${VWORLD_KEY.slice(-2)}` : "",
     },
-    FIRESTORE_AVAILABLE: !!process.env.FIRESTORE_EMULATOR_HOST || !!process.env.GCLOUD_PROJECT,
     exists: {
       base_rules: fileExists(path.join(RULES_DIR, "base_rules.json")),
       checklists: fileExists(path.join(RULES_DIR, "checklists.json")),
@@ -492,7 +562,7 @@ app.get("/api/calc", (req, res) => {
 async function nominatimFetch(url) {
   const r = await fetch(url, {
     headers: {
-      "User-Agent": "my-archi-law-checker/0.3 (firebase-functions emulator)",
+      "User-Agent": "my-archi-law-checker/0.3 (firebase-functions)",
       "Accept-Language": "ko",
     },
   });
@@ -564,7 +634,6 @@ app.get("/api/zoning/by-coord", async (req, res) => {
   const lon = toNum(req.query.lon);
   if (lat == null || lon == null) return bad(res, "missing lat/lon", 400);
 
-  // 1) VWorld 키가 있으면 실조회 시도
   if (VWORLD_KEY) {
     try {
       const got = await queryVworldZoning({ lon, lat });
@@ -576,15 +645,16 @@ app.get("/api/zoning/by-coord", async (req, res) => {
           meta: got.meta || null,
         });
       }
-      // VWorld 조회는 되었지만 결과 없음
       return ok(res, {
         found: false,
         zoning: "",
         source: got.source || "vworld_not_found",
         meta: got.meta || null,
+        raw_status: got.raw_status || null,
       });
     } catch (e) {
-      // 실무에서는 여기서 바로 fail보다는 fallback 허용이 UX 좋음
+      // 개발환경(Workstations)에서 vworld fetch가 막히는 케이스가 많아서:
+      // - 서비스가 멈추지 않게 demo fallback
       return ok(res, {
         found: true,
         zoning: "제1종일반주거지역",
@@ -594,7 +664,6 @@ app.get("/api/zoning/by-coord", async (req, res) => {
     }
   }
 
-  // 2) 키가 없으면 기존처럼 demo_stub
   ok(res, {
     found: true,
     zoning: "제1종일반주거지역",
@@ -820,12 +889,7 @@ app.get("/api/checklists/enriched", async (req, res) => {
     const height_m = toNum(req.query.height_m);
     const gross_area_m2 = toNum(req.query.gross_area_m2);
 
-    const values = {
-      floors,
-      height_m,
-      gross_area_m2,
-    };
-
+    const values = { floors, height_m, gross_area_m2 };
     const ctx = { zoning, use, jurisdiction, floors, height_m, gross_area_m2 };
 
     const checklists = loadChecklists();
@@ -870,15 +934,12 @@ app.get("/api/checklists/enriched", async (req, res) => {
     });
 
     const refs = new Set();
-    enriched.forEach((it) => {
-      (it.refs || []).forEach((c) => refs.add(c));
-    });
-    const refArr = Array.from(refs);
-    const got = await getLawsByCodes(refArr);
+    enriched.forEach((it) => (it.refs || []).forEach((c) => refs.add(c)));
+    await getLawsByCodes(Array.from(refs)); // 유지
 
     ok(res, {
       data: { default_conditional: enriched },
-      meta: { missing_refs: got.missing || [], ctx },
+      meta: { ctx },
       source: "checklists+rule_engine",
     });
   } catch (e) {
@@ -947,14 +1008,12 @@ app.post("/api/checklists/judge", async (req, res) => {
     });
 
     const refs = new Set();
-    filtered.forEach((it) => {
-      (it.refs || []).forEach((c) => refs.add(c));
-    });
-    const got = await getLawsByCodes(Array.from(refs));
+    filtered.forEach((it) => (it.refs || []).forEach((c) => refs.add(c)));
+    await getLawsByCodes(Array.from(refs)); // 유지
 
     ok(res, {
       data: { results },
-      meta: { missing_refs: got.missing || [], ctx },
+      meta: { ctx },
       source: "judge_engine",
     });
   } catch (e) {
@@ -968,13 +1027,15 @@ app.post("/api/checklists/judge", async (req, res) => {
 app.get("/api/health", (req, res) => ok(res, { status: "ok" }));
 
 // -------------------------
-// Export Cloud Function
+// Export Cloud Function (v2)
 // -------------------------
 exports.api = onRequest(
   {
     region: "asia-northeast3",
     timeoutSeconds: 60,
     memory: "256MiB",
+    // 배포 환경에서는 secrets가 있으면 process.env로 주입됨
+    secrets: ["VWORLD_KEY", "VWORLD_DOMAIN"],
   },
   app
 );

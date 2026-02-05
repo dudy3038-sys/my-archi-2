@@ -1,6 +1,6 @@
 {
-  "version": "0.2.1",
-  "updated_at": "2026-02-02",
+  "version": "0.2.2",
+  "updated_at": "2026-02-05",
   "notes": "초기 룰셋(상담용). 실제 적용은 지구단위/조례/기타 규제로 변동 가능.",
   "uses_catalog": [
     { "code": "RES_HOUSE", "label": "단독/다가구(주거)" },
@@ -15,11 +15,6 @@
       "zoning": "제1종일반주거지역",
       "bcr_max": 60,
       "far_max": 200,
-      "use_rules": {
-        "allow": ["단독주택", "다세대주택", "다가구주택", "제1종근린생활시설(일반)"],
-        "deny": ["공장", "위험물시설", "숙박시설"],
-        "notes": ["※ 실제 허가는 주차/일조/지구단위계획/조례에 따라 달라질 수 있음"]
-      },
       "uses": {
         "RES_HOUSE": "allow",
         "RES_MULTI": "conditional",
@@ -27,10 +22,17 @@
         "NEIGHBOR_2": "conditional",
         "OFFICE": "deny"
       },
-      "source": {
-        "type": "seed",
-        "title": "초기 샘플(확인 필요)",
-        "ref": "TODO: 법령/조례 근거 링크"
+      "meta": {
+        "use_rules_ko": {
+          "allow": ["단독주택", "다세대주택", "다가구주택", "제1종근린생활시설(일반)"],
+          "deny": ["공장", "위험물시설", "숙박시설"],
+          "notes": ["※ 실제 허가는 주차/일조/지구단위계획/조례에 따라 달라질 수 있음"]
+        },
+        "evidence": {
+          "type": "seed",
+          "title": "초기 샘플(확인 필요)",
+          "ref": "TODO: 법령/조례 근거 링크"
+        }
       }
     },
     {
@@ -45,10 +47,8 @@
         "NEIGHBOR_2": "allow",
         "OFFICE": "conditional"
       },
-      "source": {
-        "type": "seed",
-        "title": "초기 샘플(확인 필요)",
-        "ref": "TODO"
+      "meta": {
+        "evidence": { "type": "seed", "title": "초기 샘플(확인 필요)", "ref": "TODO" }
       }
     },
     {
@@ -63,10 +63,8 @@
         "NEIGHBOR_2": "allow",
         "OFFICE": "allow"
       },
-      "source": {
-        "type": "seed",
-        "title": "초기 샘플(확인 필요)",
-        "ref": "TODO"
+      "meta": {
+        "evidence": { "type": "seed", "title": "초기 샘플(확인 필요)", "ref": "TODO" }
       }
     },
     {
@@ -81,10 +79,24 @@
         "NEIGHBOR_2": "allow",
         "OFFICE": "allow"
       },
-      "source": {
-        "type": "seed",
-        "title": "초기 샘플(확인 필요)",
-        "ref": "TODO"
+      "meta": {
+        "evidence": { "type": "seed", "title": "초기 샘플(확인 필요)", "ref": "TODO" }
+      }
+    },
+    {
+      "id": "zoning-SEMIIND",
+      "zoning": "준공업지역",
+      "bcr_max": 70,
+      "far_max": 400,
+      "uses": {
+        "RES_HOUSE": "conditional",
+        "RES_MULTI": "conditional",
+        "NEIGHBOR_1": "allow",
+        "NEIGHBOR_2": "allow",
+        "OFFICE": "allow"
+      },
+      "meta": {
+        "evidence": { "type": "seed", "title": "초기 샘플(확인 필요)", "ref": "TODO" }
       }
     }
   ]

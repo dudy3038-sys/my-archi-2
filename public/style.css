@@ -179,7 +179,7 @@ button:disabled{
   border:1px dashed var(--line);
   background: rgba(0,0,0,.10);
   border-radius: var(--radius);
-  padding:12px; /* ✅ 추가: 카드 내부 여백 */
+  padding:12px;
 }
 
 /* ✅ 체크리스트 상단 서버판정 바/노트 (index.html 인라인 제거용) */
@@ -196,12 +196,12 @@ button:disabled{
   display:none;
 }
 
-/* 기존 id 스타일도 유지 (호환용) */
+/* 기존 id 스타일은 “호환용 최소”만 유지 */
 #checklistCard{
   background: rgba(0,0,0,.10);
 }
 
-/* ✅ checklistList 내부 여백/구분 (기존 #checklistList > div padding-top 제거) */
+/* ✅ checklistList 내부 여백/구분 */
 #checklistList{
   margin-top:10px;
 }
@@ -209,7 +209,7 @@ button:disabled{
   margin-top:0;
 }
 
-/* ✅ missing 힌트(“❗입력 필요 …”) 톤 통일 */
+/* ✅ missing 힌트 톤 통일 */
 .missing-hint{
   margin-top:6px;
   font-size:12px;
@@ -223,7 +223,7 @@ button:disabled{
   opacity:.85;
 }
 
-/* ✅ 지도 영역: 인라인 제거용 */
+/* ✅ 지도 영역 */
 .map{
   height:280px;
   border-radius:14px;
@@ -232,7 +232,6 @@ button:disabled{
   border:1px solid rgba(255,255,255,.10);
 }
 
-/* 기존 #map 테두리(혹시 남아있어도 동일 톤) */
 #map{
   border:1px solid rgba(255,255,255,.10);
 }
@@ -254,7 +253,7 @@ a:hover{
   filter:brightness(1.1);
 }
 
-/* 스크롤바(윈도우에서 너무 튀는 느낌 완화) */
+/* 스크롤바 */
 *::-webkit-scrollbar{height:10px; width:10px}
 *::-webkit-scrollbar-thumb{background: rgba(255,255,255,.18); border-radius:999px}
 *::-webkit-scrollbar-track{background: rgba(0,0,0,.12)}
@@ -266,31 +265,26 @@ a:hover{
 }
 
 /* =========================================================
-   ✅ script.js에서 새로 추가된 클래스들(인라인 제거용)
+   ✅ script.js에서 새로 추가된 클래스들
 ========================================================= */
 
-/* 공용: 흐린 inline 텍스트 */
 .inlineDim{ opacity:.75; }
 
-/* 계산 note */
 .calcNote{
   opacity:.85;
   margin-top:8px;
 }
 
-/* 룰 적용 결과 메타 */
 .ruleAppliedMeta{
   margin-top:6px;
   opacity:.9;
 }
 
-/* 용도 판정 결과 row */
 .useRow{
   margin-top:6px;
   opacity:.9;
 }
 
-/* 주소 geocode 결과 */
 .geoName{
   margin-top:6px;
   opacity:.9;
@@ -299,12 +293,10 @@ a:hover{
   margin-top:6px;
 }
 
-/* 자동 룰/용도지역 안내 */
 .ruleAutoZoning{ margin-top:6px; }
 .ruleAutoDone{ margin-top:6px; opacity:.9; }
 .ruleAutoJuris{ margin-top:6px; opacity:.9; }
 
-/* 요약 pre */
 .summaryPre{
   white-space:pre-wrap;
   margin:0;
@@ -313,7 +305,7 @@ a:hover{
   line-height: 1.55;
 }
 
-/* 체크리스트 상단 헤더(카드 내부) */
+/* 체크리스트 상단 헤더 */
 .clHeader{
   padding:10px;
   border:1px solid var(--line);
@@ -337,10 +329,8 @@ a:hover{
 }
 .clToggleAllBtn{ white-space:nowrap; }
 
-/* 체크리스트 body wrapper */
 .clBody{ display:block; }
 
-/* 체크리스트 item */
 .clItem{
   padding:12px 0;
   border-top:1px solid rgba(255,255,255,.10);
@@ -366,7 +356,6 @@ a:hover{
   margin-top:6px;
 }
 
-/* applies_to 힌트 */
 .clAppliesTo{
   display:inline-flex;
   align-items:center;
@@ -390,14 +379,12 @@ a:hover{
   }
 }
 
-/* “필요 입력: …” 텍스트 라인 */
 .clNeedInputLine{
   opacity:.85;
   font-size:13px;
   margin-top:4px;
 }
 
-/* 입력 라벨/캡션/인풋 */
 .clInputLabel{ display:block; margin-top:10px; }
 .clInputCaption{
   display:block;
@@ -408,17 +395,14 @@ a:hover{
 }
 .clInput{ width:100%; }
 
-/* 근거 refs */
 .clRefs{
   opacity:.75;
   font-size:12px;
   margin-top:10px;
 }
 
-/* 법령 영역 */
 .clLaws{ margin-top:10px; }
 
-/* 판정 메시지 */
 .clJudgeMsg{
   font-size:12px;
   opacity:.9;
@@ -429,8 +413,6 @@ a:hover{
 /* =========================
    ✅ LAW PANEL + LAW CARD
 ========================= */
-
-/* 법령 패널(펼쳤을 때 구획감) */
 .lawsPanel{
   margin-top:10px;
   padding:10px;
@@ -439,15 +421,15 @@ a:hover{
   background: rgba(0,0,0,.10);
 }
 
-/* 법령 카드 */
+/* ✅ FIX: 래퍼 div 간격을 확실하게 */
+.lawsPanel > div + div{ margin-top:10px; }
+
 .lawCard{
   padding:12px;
   border:1px solid var(--line);
   border-radius:12px;
   background: rgba(0,0,0,.18);
 }
-.lawsPanel .lawCard{ margin-top:0; }
-.lawsPanel > div + div{ margin-top:10px; }
 
 .lawCardTop{
   display:flex;
@@ -524,7 +506,7 @@ a:hover{
   background: rgba(255,255,255,.05);
 }
 
-/* 입력 누락 강조는 "주의" 톤 */
+/* 입력 누락 강조 */
 input[data-missing="1"]{
   border-color: var(--warn) !important;
   box-shadow: 0 0 0 3px rgba(245, 158, 11, .22) !important;
