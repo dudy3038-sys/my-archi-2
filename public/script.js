@@ -151,6 +151,68 @@ function badgeHtml(statusRaw) {
 }
 
 /* =========================
+   ✅ Select 옵션 안전 세팅 (V월드 zoning 문자열 불일치 대비)
+========================= */
+function ensureSelectHasOption(selectEl, value, { labelSuffix = " (자동)", select = true } = {}) {
+  if (!selectEl) return false;
+  const v = String(value || "").trim();
+  if (!v) return false;
+
+  const exists = Array.from(selectEl.options || []).some((o) => String(o.value) === v);
+  if (!exists) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = `${v}${labelSuffix}`;
+    // 앞쪽(선택 다음)에 꽂아두면 사용자가 보기 편함
+    try {
+      selectEl.insertBefore(opt, selectEl.options[1] || null);
+    } catch {
+      selectEl.appendChild(opt);
+    }
+  }
+
+  if (select) selectEl.value = v;
+  return true;
+}
+
+/* =========================
+   ✅ V월드 zoning 실패 시 후보 선택 UI
+========================= */
+function renderZoningPickPanelHtml({ note = "", raw_name = "", candidates = [], sourceData = "" } = {}) {
+  const cand = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
+  const hasCand = cand.length > 0;
+
+  const btns = hasCand
+    ? `
+      <div style="margin-top:10px;">
+        <div class="muted-sm" style="margin-bottom:6px;">후보를 눌러 수동 적용할 수 있어요:</div>
+        <div class="actions actions--start actions--gap-sm" style="margin-top:0;">
+          ${cand
+            .slice(0, 10)
+            .map(
+              (z) =>
+                `<button type="button" class="ghost" data-pick-zoning="${escapeHtml(z)}">✅ ${escapeHtml(z)} 적용</button>`
+            )
+            .join("")}
+        </div>
+      </div>
+    `
+    : "";
+
+  const rawLine = raw_name ? `<div class="muted-sm" style="margin-top:6px;">V월드 원문: ${escapeHtml(raw_name)}</div>` : "";
+  const srcLine = sourceData ? `<div class="muted-sm" style="margin-top:6px;">source: ${escapeHtml(sourceData)}</div>` : "";
+
+  return `
+    <div>🧭 좌표 기반 용도지역 자동 판별: 실패</div>
+    ${note ? `<div class="inlineDim" style="margin-top:6px;">${escapeHtml(note)}</div>` : ""}
+    ${rawLine}
+    ${srcLine}
+    <div class="inlineDim" style="margin-top:6px;">→ 또는, 아래 “후보”를 눌러 바로 적용해 보세요.</div>
+    ${btns}
+  `;
+}
+
+/* =========================
    ✅ 법령 상세(클릭 시 로드)
 ========================= */
 
@@ -536,7 +598,7 @@ function buildAppliesToHint(it) {
     const th = toNumSafe(a.min_height_m);
     const cur = getCurrentKnownValue("height_m");
     if (cur == null) needs.push("건물 높이(m)");
-    else parts.push(`높이 ≥ ${fmt(th)}m (현재: ${fmt(cur)}m)`);
+    else parts.push(`높이 ≥ ${fmt(th)}m (현재: ${fmt(cur)}m)`); // eslint-disable-line
   }
 
   if (needs.length > 0) {
@@ -1400,6 +1462,30 @@ window.addEventListener("DOMContentLoaded", () => {
     await runServerJudgeAndApply();
   });
 
+  // ✅ 후보 버튼(룰힌트 영역) 클릭 위임
+  ruleHint?.addEventListener("click", async (e) => {
+    const btn = e.target?.closest?.("button[data-pick-zoning]");
+    if (!btn) return;
+    const z = String(btn.getAttribute("data-pick-zoning") || "").trim();
+    if (!z) return;
+
+    ensureSelectHasOption(zoningSelect, z, { labelSuffix: " (수동선택)" });
+    _ctx.zoning = z;
+
+    try {
+      await applyRuleByZoning(z, { silent: false });
+    } catch (err) {
+      setText(ruleHint, `❌ 후보 적용 실패: ${escapeHtml(String(err))}`);
+      return;
+    }
+
+    const u = (useSelect?.value || "").trim();
+    if (u) {
+      // 용도가 이미 선택된 상태면 바로 판정+체크리스트 갱신
+      debouncedAutoUseCheck();
+    }
+  });
+
   // 초기 데이터 로드 상태
   let _usesLoaded = false;
 
@@ -1710,27 +1796,35 @@ window.addEventListener("DOMContentLoaded", () => {
         console.warn("reverse failed:", e);
       }
 
+      // ✅ V월드: 좌표 → 용도지역 자동 판별
       try {
         const zdata = await fetchJson(
           `/api/zoning/by-coord?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
           { signal: _geocodeAbort.signal }
         );
 
-        if (zdata.found) {
-          if (zoningSelect) zoningSelect.value = zdata.zoning;
+        if (zdata.found && String(zdata.zoning || "").trim()) {
+          // 1) 옵션 불일치 대비: 옵션 없으면 추가 후 선택
+          ensureSelectHasOption(zoningSelect, zdata.zoning, { labelSuffix: " (자동)" });
           _ctx.zoning = zdata.zoning;
 
+          // 2) 룰 자동 적용
           try {
             await applyRuleByZoning(zdata.zoning, { silent: true });
             setText(
               ruleHint,
               `
-                <div>🧭 좌표 기반 추정 용도지역 자동 설정</div>
+                <div>🧭 좌표 기반 용도지역 자동 설정</div>
                 <div class="ruleAutoZoning"><b>${escapeHtml(zdata.zoning)}</b> [추정]</div>
                 <div class="ruleAutoDone">룰(건폐율/용적률) 자동 적용 완료</div>
                 ${
                   _ctx.jurisdiction
                     ? `<div class="ruleAutoJuris">지자체(추정): ${escapeHtml(_ctx.jurisdiction)}</div>`
+                    : ""
+                }
+                ${
+                  zdata?.source?.data
+                    ? `<div class="muted-sm" style="margin-top:6px;">source: ${escapeHtml(zdata.source.data)}</div>`
                     : ""
                 }
               `
@@ -1739,30 +1833,49 @@ window.addEventListener("DOMContentLoaded", () => {
             setText(ruleHint, `❌ 룰 자동 적용 실패: ${escapeHtml(String(e))}`);
           }
 
+          // 3) 기본용도 자동 선택은 "비어있을 때만"
           const defaultUse = "RES_HOUSE";
-          if (_usesLoaded && useSelect) {
-            useSelect.value = defaultUse;
-            await checkUseAndMaybeChecklist({
-              zoning: zdata.zoning,
-              use: defaultUse,
-              reason: "기본용도(주거) 자동",
-            });
-          } else {
-            const retryOnce = async () => {
-              if (!_usesLoaded) return;
-              if (useSelect) useSelect.value = defaultUse;
+          const curUse = (useSelect?.value || "").trim();
+
+          if (!curUse) {
+            if (_usesLoaded && useSelect) {
+              useSelect.value = defaultUse;
               await checkUseAndMaybeChecklist({
                 zoning: zdata.zoning,
                 use: defaultUse,
                 reason: "기본용도(주거) 자동",
               });
-            };
-            setTimeout(retryOnce, 250);
-            setTimeout(retryOnce, 800);
+            } else {
+              const retryOnce = async () => {
+                if (!_usesLoaded) return;
+                const nowUse = (useSelect?.value || "").trim();
+                if (nowUse) return;
+                if (useSelect) useSelect.value = defaultUse;
+                await checkUseAndMaybeChecklist({
+                  zoning: zdata.zoning,
+                  use: defaultUse,
+                  reason: "기본용도(주거) 자동",
+                });
+              };
+              setTimeout(retryOnce, 250);
+              setTimeout(retryOnce, 800);
+            }
           }
+        } else {
+          // found=false (키 없음/해당 좌표 결과 없음/매칭 실패 등)
+          setText(
+            ruleHint,
+            renderZoningPickPanelHtml({
+              note: String(zdata.note || "").trim(),
+              raw_name: String(zdata.raw_name || "").trim(),
+              candidates: Array.isArray(zdata.candidates) ? zdata.candidates : [],
+              sourceData: String(zdata?.source?.data || (zdata?.source?.tried || []).join(",")),
+            })
+          );
         }
       } catch (e) {
         console.warn("auto zoning failed:", e);
+        // 여기서 실패해도 전체 플로우는 계속 진행 가능 (수동 선택)
       }
     } catch (e) {
       if (String(e).includes("AbortError")) return;

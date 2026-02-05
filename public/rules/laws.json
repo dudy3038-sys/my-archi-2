@@ -2,7 +2,7 @@
   "BLD-ACT-44": {
     "title": "도로 접도 조건",
     "law_name": "건축법",
-    "article": { "type": "article", "label": "제44조" },
+    "article": "제44조",
     "summary": "건축물은 일정 기준을 만족하는 도로에 접해야 합니다. 접도 요건은 대지 여건·현황도로·확폭 여부 등과 함께 종합 검토가 필요합니다.",
     "url": "",
     "display_mode": "placeholder_link",
@@ -26,11 +26,10 @@
       "확폭 예정 도로 여부"
     ]
   },
-
   "PARK-ORD-01": {
     "title": "주차대수 산정",
     "law_name": "주차장법 및 지자체 조례",
-    "article": { "type": "appendix", "label": "조례 별표 기준" },
+    "article": "조례 별표 기준",
     "summary": "건축물 용도와 연면적 등에 따라 법정 주차대수가 달라지며, 지자체 주차조례 확인이 필수입니다.",
     "url": "",
     "display_mode": "placeholder_link",
@@ -52,11 +51,10 @@
       "부설주차장 설치 위치 제한"
     ]
   },
-
   "BLD-ACT-61": {
     "title": "일조 관련 제한",
     "law_name": "건축법 및 관련 고시/조례",
-    "article": { "type": "multi", "label": "제61조 등" },
+    "article": "제61조 등",
     "summary": "주거지역 등에서 인접 대지의 일조 확보를 위해 건축물 높이 및 이격이 제한될 수 있습니다.",
     "url": "",
     "display_mode": "placeholder_link",
@@ -78,11 +76,10 @@
       "지구단위계획에서 별도 높이 제한 존재 여부"
     ]
   },
-
   "FIRE-REG-05": {
     "title": "피난/방화 기준 강화 조건",
     "law_name": "건축물의 피난·방화구조 등의 기준에 관한 규칙",
-    "article": { "type": "related", "label": "관련 조항" },
+    "article": "관련 조항",
     "summary": "층수와 연면적, 용도에 따라 피난계단, 방화구획 등 요구조건이 강화될 수 있습니다.",
     "url": "",
     "display_mode": "placeholder_link",

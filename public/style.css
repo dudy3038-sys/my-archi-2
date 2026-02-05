@@ -144,7 +144,9 @@ button{
   color:white;
   background:var(--btn);
   cursor:pointer;
-  font-weight:700;
+  font-weight:800;
+  line-height:1.2;
+  min-height:40px;
   transition: transform .05s ease, filter .15s ease, opacity .15s ease;
 }
 
@@ -182,7 +184,7 @@ button:disabled{
   padding:12px;
 }
 
-/* ✅ 체크리스트 상단 서버판정 바/노트 (index.html 인라인 제거용) */
+/* ✅ 체크리스트 상단 서버판정 바/노트 */
 .checklistServerBar{
   margin:0 0 10px;
 }
@@ -191,23 +193,15 @@ button:disabled{
   line-height:1.45;
 }
 
-/* ✅ 초기 숨김용 클래스(표시/숨김은 JS가 style.display로도 제어) */
-.is-hidden{
-  display:none;
-}
+/* ✅ 초기 숨김용 클래스 */
+.is-hidden{ display:none; }
 
 /* 기존 id 스타일은 “호환용 최소”만 유지 */
-#checklistCard{
-  background: rgba(0,0,0,.10);
-}
+#checklistCard{ background: rgba(0,0,0,.10); }
 
 /* ✅ checklistList 내부 여백/구분 */
-#checklistList{
-  margin-top:10px;
-}
-#checklistList:empty{
-  margin-top:0;
-}
+#checklistList{ margin-top:10px; }
+#checklistList:empty{ margin-top:0; }
 
 /* ✅ missing 힌트 톤 통일 */
 .missing-hint{
@@ -232,12 +226,29 @@ button:disabled{
   border:1px solid rgba(255,255,255,.10);
 }
 
-#map{
-  border:1px solid rgba(255,255,255,.10);
+#map{ border:1px solid rgba(255,255,255,.10); }
+
+/* ✅ Leaflet 컨트롤 가독성(다크 테마 보정) */
+.leaflet-control,
+.leaflet-bar a{
+  background: rgba(0,0,0,.55) !important;
+  color: var(--text) !important;
+  border-color: rgba(255,255,255,.18) !important;
+}
+.leaflet-bar a:hover{
+  filter: brightness(1.08);
+}
+.leaflet-control-attribution{
+  background: rgba(0,0,0,.35) !important;
+  color: rgba(233,238,252,.75) !important;
+  border-radius: 10px;
+  padding: 2px 8px;
 }
 
-/* 요약 박스 pre 가독성 */
-#summaryBox pre{
+/* 요약 박스 pre 가독성 (중복 제거: summaryPre로 통일) */
+.summaryPre{
+  white-space:pre-wrap;
+  margin:0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 13px;
   line-height: 1.55;
@@ -249,9 +260,7 @@ a{
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-a:hover{
-  filter:brightness(1.1);
-}
+a:hover{ filter:brightness(1.1); }
 
 /* 스크롤바 */
 *::-webkit-scrollbar{height:10px; width:10px}
@@ -297,14 +306,6 @@ a:hover{
 .ruleAutoDone{ margin-top:6px; opacity:.9; }
 .ruleAutoJuris{ margin-top:6px; opacity:.9; }
 
-.summaryPre{
-  white-space:pre-wrap;
-  margin:0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
 /* 체크리스트 상단 헤더 */
 .clHeader{
   padding:10px;
@@ -335,9 +336,8 @@ a:hover{
   padding:12px 0;
   border-top:1px solid rgba(255,255,255,.10);
 }
-.clItem:first-of-type{
-  border-top:0;
-}
+.clItem:first-of-type{ border-top:0; }
+
 .clItemTop{
   display:flex;
   align-items:center;

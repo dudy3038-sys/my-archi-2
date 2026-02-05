@@ -1,11 +1,12 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "updated_at": "2026-02-05",
   "notes": [
     "UI/설명/입력 정의용 체크리스트 데이터",
     "판정 로직(rule_set/auto_rules/optional_inputs)은 rule_engine.json로 분리",
     "주의: inputs에 넣은 key는 기본적으로 '필수 입력'으로 간주됨(= optional_inputs로 제외하지 않으면 need_input 판정 가능)",
-    "따라서 use/jurisdiction/zoning 같은 컨텍스트 값은 inputs로 넣지 않고 applies_to로 제어하는 것을 권장"
+    "따라서 use/jurisdiction/zoning 같은 컨텍스트 값은 inputs로 넣지 않고 applies_to로 제어하는 것을 권장",
+    "추가 필드(unit/min/max/step/help 등)는 현재 프론트에서 무시되며, 추후 UI 개선 시 활용 가능"
   ],
   "default_conditional": [
     {
@@ -15,7 +16,16 @@
       "logic_level": "semi",
       "category": "대지/접도",
       "inputs": [
-        { "key": "road_width_m", "label": "도로 폭(m)", "type": "number", "placeholder": "예: 4" }
+        {
+          "key": "road_width_m",
+          "label": "도로 폭(m)",
+          "type": "number",
+          "placeholder": "예: 4",
+          "unit": "m",
+          "min": 0,
+          "step": 0.1,
+          "help": "대지에 접하는 도로의 유효 폭(현황/도면 기준)을 입력"
+        }
       ],
       "refs": ["BLD-ACT-44"]
     },
@@ -26,7 +36,16 @@
       "logic_level": "manual",
       "category": "주차/교통",
       "inputs": [
-        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 800" }
+        {
+          "key": "gross_area_m2",
+          "label": "연면적(㎡)",
+          "type": "number",
+          "placeholder": "예: 800",
+          "unit": "㎡",
+          "min": 0,
+          "step": 1,
+          "help": "주차 기준은 용도/규모/지자체 조례에 의해 결정"
+        }
       ],
       "refs": ["PARK-ORD-01"],
       "applies_to": { "min_gross_area_m2": 300 },
@@ -41,8 +60,26 @@
       "logic_level": "manual",
       "category": "일조/사선",
       "inputs": [
-        { "key": "height_m", "label": "건물 높이(m)", "type": "number", "placeholder": "예: 18" },
-        { "key": "setback_m", "label": "대지 경계 거리(m)", "type": "number", "placeholder": "예: 2" }
+        {
+          "key": "height_m",
+          "label": "건물 높이(m)",
+          "type": "number",
+          "placeholder": "예: 18",
+          "unit": "m",
+          "min": 0,
+          "step": 0.1,
+          "help": "검토 대상 건물 최고높이(지붕/옥탑 포함 여부는 기준에 따름)"
+        },
+        {
+          "key": "setback_m",
+          "label": "대지 경계 거리(m)",
+          "type": "number",
+          "placeholder": "예: 2",
+          "unit": "m",
+          "min": 0,
+          "step": 0.1,
+          "help": "인접대지 경계선으로부터의 이격거리(현황/계획 기준)"
+        }
       ],
       "refs": ["BLD-ACT-61"],
       "applies_to": {
@@ -56,8 +93,25 @@
       "logic_level": "semi",
       "category": "피난/방화",
       "inputs": [
-        { "key": "floors", "label": "층수", "type": "number", "placeholder": "예: 6" },
-        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 2500" }
+        {
+          "key": "floors",
+          "label": "층수",
+          "type": "number",
+          "placeholder": "예: 6",
+          "min": 1,
+          "step": 1,
+          "help": "지상층 기준(지하 포함 여부는 항목별로 분리 가능)"
+        },
+        {
+          "key": "gross_area_m2",
+          "label": "연면적(㎡)",
+          "type": "number",
+          "placeholder": "예: 2500",
+          "unit": "㎡",
+          "min": 0,
+          "step": 1,
+          "help": "대규모일수록 방화/피난 요구 강화 가능"
+        }
       ],
       "refs": ["FIRE-REG-05"]
     },
@@ -68,7 +122,15 @@
       "logic_level": "semi",
       "category": "설비/승강기",
       "inputs": [
-        { "key": "floors", "label": "층수", "type": "number", "placeholder": "예: 6" }
+        {
+          "key": "floors",
+          "label": "층수",
+          "type": "number",
+          "placeholder": "예: 6",
+          "min": 1,
+          "step": 1,
+          "help": "층수/용도/장애인 편의 기준에 따라 의무 여부가 갈림"
+        }
       ],
       "refs": ["FIRE-REG-05"],
       "applies_to": { "min_floors": 5 },
@@ -83,7 +145,16 @@
       "logic_level": "manual",
       "category": "장애인/편의",
       "inputs": [
-        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 1200" }
+        {
+          "key": "gross_area_m2",
+          "label": "연면적(㎡)",
+          "type": "number",
+          "placeholder": "예: 1200",
+          "unit": "㎡",
+          "min": 0,
+          "step": 1,
+          "help": "실무에서는 용도(시설군) 기준이 핵심(향후 use_in으로 확장 권장)"
+        }
       ],
       "refs": ["BLD-ACT-44"],
       "applies_to": { "min_gross_area_m2": 500 },
@@ -98,12 +169,22 @@
       "logic_level": "semi",
       "category": "에너지/설비",
       "inputs": [
-        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 3000" }
+        {
+          "key": "gross_area_m2",
+          "label": "연면적(㎡)",
+          "type": "number",
+          "placeholder": "예: 3000",
+          "unit": "㎡",
+          "min": 0,
+          "step": 1,
+          "help": "제로에너지/에너지절약계획서 등 적용 제도에 따라 달라짐"
+        }
       ],
-      "refs": [],
+      "refs": ["ENERGY-PLAN-01"],
       "applies_to": { "min_gross_area_m2": 2000 },
       "notes": [
-        "정확 기준은 용도 및 적용 제도(제로에너지/에너지절약계획서 등)에 따라 달라짐"
+        "정확 기준은 용도 및 적용 제도(제로에너지/에너지절약계획서 등)에 따라 달라짐",
+        "현재 refs는 임시 코드(ENERGY-PLAN-01)이며 laws.json에 근거를 추가 권장"
       ]
     },
     {
@@ -113,8 +194,23 @@
       "logic_level": "manual",
       "category": "구조/내화",
       "inputs": [
-        { "key": "floors", "label": "층수", "type": "number", "placeholder": "예: 10" },
-        { "key": "gross_area_m2", "label": "연면적(㎡)", "type": "number", "placeholder": "예: 8000" }
+        {
+          "key": "floors",
+          "label": "층수",
+          "type": "number",
+          "placeholder": "예: 10",
+          "min": 1,
+          "step": 1
+        },
+        {
+          "key": "gross_area_m2",
+          "label": "연면적(㎡)",
+          "type": "number",
+          "placeholder": "예: 8000",
+          "unit": "㎡",
+          "min": 0,
+          "step": 1
+        }
       ],
       "refs": ["FIRE-REG-05"],
       "notes": [
@@ -130,14 +226,19 @@
       "inputs": [
         {
           "key": "district_plan_known",
-          "label": "지구단위계획 적용 여부를 알고 있나요? (0=모름, 1=해당없음, 2=해당)",
+          "label": "지구단위계획 적용 여부 (0=모름, 1=해당없음, 2=해당)",
           "type": "number",
-          "placeholder": "예: 0"
+          "placeholder": "예: 0",
+          "min": 0,
+          "max": 2,
+          "step": 1,
+          "help": "0/1/2 중 하나를 입력(향후 UI를 라디오/셀렉트로 개선 권장)"
         }
       ],
-      "refs": [],
+      "refs": ["URBAN-PLAN-01"],
       "notes": [
-        "향후: 좌표→지구단위계획 레이어 조회(외부 API/공간데이터)로 자동화 가능"
+        "향후: 좌표→지구단위계획 레이어 조회(외부 API/공간데이터)로 자동화 가능",
+        "현재 refs는 임시 코드(URBAN-PLAN-01)이며 laws.json에 근거를 추가 권장"
       ]
     }
   ]
