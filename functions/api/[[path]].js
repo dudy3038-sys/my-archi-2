@@ -29,13 +29,14 @@ export async function onRequest(context) {
         },
       });
 
+    // ✅ JSON body reader (안정/에러 구분)
     const readJson = async () => {
       const text = await request.text();
       if (!text) return null;
       try {
         return JSON.parse(text);
       } catch {
-        return null;
+        return { __invalid_json: true };
       }
     };
 
@@ -210,7 +211,13 @@ export async function onRequest(context) {
       return missing;
     };
 
-    const judgeOneItem = (checkItem, engineItem, values) => {
+    /**
+     * ✅ 핵심 변경:
+     * - rule_engine 정책에 맞춰 need_input 강제는 기본 OFF
+     * - (입력 누락이어도) 기본은 conditional로 안내하고,
+     *   rule_engine이 명시적으로 need_input을 쓰는 경우에만 need_input이 나오게 한다.
+     */
+    const judgeOneItem = (checkItem, engineItem, values, { forceNeedInputOnMissing = false } = {}) => {
       const ruleSet = engineItem?.rule_set || {};
       const defaultResult = normalizeStatus(ruleSet.default_result || "conditional");
       const defaultMessage = String(ruleSet.default_message || "⚠️ 추가 검토가 필요합니다.").trim();
@@ -223,10 +230,16 @@ export async function onRequest(context) {
       // 결과 결정:
       // - auto_rules hit가 있으면 그 결과 사용
       // - 없으면 rule_set default 사용
-      // - 단, 결과가 need_input인데 실제로 missing이 없으면 conditional로 완화(데이터 실수 방어)
       let status = hit?.result ? normalizeStatus(hit.result) : defaultResult;
       let message = hit?.message ? String(hit.message).trim() : defaultMessage;
 
+      // (옵션) 강제 need_input: 특별히 쓰고 싶을 때만
+      if (forceNeedInputOnMissing && missing_inputs.length > 0 && status !== "deny") {
+        status = "need_input";
+        if (!message) message = "❓ 입력이 필요합니다.";
+      }
+
+      // 데이터 실수 방어
       if (status === "need_input" && missing_inputs.length === 0) {
         status = "conditional";
         message = message || defaultMessage;
@@ -272,8 +285,7 @@ export async function onRequest(context) {
       if (a.min_gross_area_m2 != null) {
         const th = toNum(a.min_gross_area_m2);
         if (th != null) {
-          // 값이 없으면 "판단 불가" → 표시(UX상 입력 유도)
-          if (curArea == null) return true;
+          if (curArea == null) return true; // 값 없으면 표시(입력 유도)
           if (curArea < th) return false;
         }
       }
@@ -293,6 +305,62 @@ export async function onRequest(context) {
       }
 
       return true;
+    };
+
+    const mergeJudgeValues = (ctx, values) => {
+      const merged = { ...(values || {}) };
+
+      // context 문자열
+      if (ctx?.zoning && merged.zoning === undefined) merged.zoning = String(ctx.zoning).trim();
+      if (ctx?.use && merged.use === undefined) merged.use = String(ctx.use).trim();
+      if (ctx?.jurisdiction && merged.jurisdiction === undefined) merged.jurisdiction = String(ctx.jurisdiction).trim();
+
+      // context 숫자
+      const floors = toNum(ctx?.floors);
+      const height_m = toNum(ctx?.height_m);
+      const gross_area_m2 = toNum(ctx?.gross_area_m2);
+
+      if (floors != null && merged.floors === undefined) merged.floors = floors;
+      if (height_m != null && merged.height_m === undefined) merged.height_m = height_m;
+      if (gross_area_m2 != null && merged.gross_area_m2 === undefined) merged.gross_area_m2 = gross_area_m2;
+
+      return merged;
+    };
+
+    const summarizeResults = (results) => {
+      const counts = { allow: 0, conditional: 0, deny: 0, need_input: 0, unknown: 0 };
+      const missingKeys = new Set();
+
+      for (const r of results) {
+        const st = normalizeStatus(r?.status);
+        if (counts[st] == null) counts.unknown++;
+        else counts[st]++;
+
+        const miss = Array.isArray(r?.missing_inputs) ? r.missing_inputs : [];
+        miss.forEach((m) => {
+          const k = String(m?.key || "").trim();
+          if (k) missingKeys.add(k);
+        });
+      }
+
+      // 전체 status 우선순위:
+      // deny > need_input > conditional > allow > unknown
+      // (need_input은 정책상 최소화되지만, 엔진이 명시할 수도 있으니 남겨둠)
+      let status = "unknown";
+      if (counts.deny > 0) status = "deny";
+      else if (counts.need_input > 0) status = "need_input";
+      else if (counts.conditional > 0) status = "conditional";
+      else if (counts.allow > 0) status = "allow";
+
+      const total = results?.length ?? 0;
+
+      return {
+        status,
+        total,
+        counts,
+        missing_inputs: Array.from(missingKeys),
+        note: total === 0 ? "적용되는 체크리스트 항목이 없습니다. (조건/필터 결과)" : undefined,
+      };
     };
 
     /* =========================
@@ -685,6 +753,7 @@ export async function onRequest(context) {
        - applies_to 필터링
        - rule_engine merge
        - server_judge 사전 부착
+       - need_input 강제 X (정책: 최소화)
     ========================= */
     if (segs[0] === "checklists" && segs[1] === "enriched" && method === "GET") {
       const url = new URL(request.url);
@@ -725,7 +794,7 @@ export async function onRequest(context) {
             auto_rules: [],
           };
 
-          const judged = judgeOneItem(it, fallbackEngine, values);
+          const judged = judgeOneItem(it, fallbackEngine, values, { forceNeedInputOnMissing: false });
 
           return {
             ...it,
@@ -749,14 +818,25 @@ export async function onRequest(context) {
     }
 
     /* =========================
-       ✅ /api/checklists/judge
-       - rule_engine 기반 자동판정 + optional_inputs 반영
+       ✅ /api/checklists/judge (고도화)
+       - applies_to 필터링 적용 (ctx + values 보강)
+       - context -> values merge (zoning/use/jurisdiction/floors/height/gross_area)
+       - 결과 스키마 정리 + summary(total/note) 포함
        - laws.json 미등록 refs 수집(meta.missing_refs)
+       - invalid_json 400 처리
+       - need_input 강제 X (정책: 최소화)
     ========================= */
     if (segs[0] === "checklists" && segs[1] === "judge" && method === "POST") {
       const body = await readJson();
+      if (body && body.__invalid_json) {
+        return json({ ok: false, error: "invalid_json" }, 400);
+      }
+      if (!body) {
+        return json({ ok: false, error: "missing_body" }, 400);
+      }
+
       const ctx = body?.context || {};
-      const values = body?.values || {};
+      const rawValues = body?.values || {};
 
       const [rawChecklist, engine, laws] = await Promise.all([loadChecklists(), loadRuleEngine(), loadLaws()]);
       const items = getChecklistArray(rawChecklist);
@@ -764,10 +844,23 @@ export async function onRequest(context) {
       const engineItems = Array.isArray(engine?.default_conditional) ? engine.default_conditional : [];
       const engineById = new Map(engineItems.map((x) => [String(x?.id || ""), x]).filter(([k]) => k));
 
+      // ✅ 판정용 values (context 파생 포함)
+      const values = mergeJudgeValues(ctx, rawValues);
+
+      // ✅ applies_to 필터링 정확도 보강
+      const ctxForFilter = { ...(ctx || {}) };
+      if (toNum(ctxForFilter.floors) == null && toNum(values.floors) != null) ctxForFilter.floors = toNum(values.floors);
+      if (toNum(ctxForFilter.height_m) == null && toNum(values.height_m) != null)
+        ctxForFilter.height_m = toNum(values.height_m);
+      if (toNum(ctxForFilter.gross_area_m2) == null && toNum(values.gross_area_m2) != null)
+        ctxForFilter.gross_area_m2 = toNum(values.gross_area_m2);
+
       const missingRefSet = new Set();
       const lawsMap = laws || {};
 
-      const results = items.map((it) => {
+      const filtered = items.filter((it) => appliesToPass(it, ctxForFilter));
+
+      const results = filtered.map((it) => {
         const id = String(it?.id || "");
         const eng = engineById.get(id) || null;
 
@@ -786,22 +879,27 @@ export async function onRequest(context) {
           if (!lawsMap[code]) missingRefSet.add(code);
         });
 
-        const judged = judgeOneItem(it, fallbackEngine, values);
+        const judged = judgeOneItem(it, fallbackEngine, values, { forceNeedInputOnMissing: false });
 
         return {
           id,
           status: judged.status,
           message: judged.message,
-          missing_inputs: judged.missing_inputs,
-          judge: judged.judge,
+          missing_inputs: judged.missing_inputs || [],
+          matched_rule_id: judged.judge?.rule_id || null,
+          priority: judged.judge?.priority ?? 0,
+          judge: judged.judge, // 디버깅/추적용(원하면 나중에 제거 가능)
         };
       });
 
+      const summary = summarizeResults(results);
+
       return json({
         ok: true,
-        data: { results },
+        data: { summary, results },
         meta: {
-          context: ctx,
+          context: ctxForFilter,
+          values,
           missing_refs: Array.from(missingRefSet),
           source: "rule_engine.json + checklists.json",
         },

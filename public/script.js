@@ -32,6 +32,9 @@ const ALWAYS_SHOW_CHECKLIST = true;
 // ✅ 마지막 용도 판정 status 저장 (runCalc 이후 enriched 재로딩 시 헤더 유지)
 let _lastUseStatus = "";
 
+// ✅ 마지막 서버 요약(summary) 저장 (요약문/헤더에 활용)
+let _lastServerSummary = null;
+
 // ✅ calc 자동 입력 후 서버판정 재호출 중복 방지용 플래그
 let _isAutoFillRunning = false;
 
@@ -120,7 +123,7 @@ function badgeText(state) {
   return map[state] || "";
 }
 
-// ✅ 서버/프론트 판정 status 정규화 (functions/index.js와 맞춤)
+// ✅ 서버/프론트 판정 status 정규화
 function normalizeStatus(s) {
   const v = String(s || "").trim().toLowerCase();
   if (v === "allow") return "allow";
@@ -148,6 +151,23 @@ function badgeHtml(statusRaw) {
   const hit = map[status];
   if (!hit) return "";
   return `<span class="judgeBadge ${escapeHtml(hit.cls)}">${escapeHtml(hit.label)}</span>`;
+}
+
+/* =========================
+   ✅ 체크리스트 아이템 단위 missing 강조 플래그
+   - clItem[data-has-missing="1"] 형태로 CSS에서 활용 가능
+========================= */
+function setItemMissingFlag(checklistId, hasMissing) {
+  const itemEl = $(`cl_${checklistId}`);
+  if (!itemEl) return;
+  itemEl.dataset.hasMissing = hasMissing ? "1" : "0";
+}
+
+function recomputeItemMissingFlag(checklistId) {
+  const list = $("checklistList");
+  if (!list) return;
+  const missEls = list.querySelectorAll(`input[data-checklist-id="${checklistId}"][data-missing="1"]`);
+  setItemMissingFlag(checklistId, missEls.length > 0);
 }
 
 /* =========================
@@ -322,6 +342,29 @@ async function fetchLawsByCodesBulk(codes) {
 function renderLawCardHtml(code, payload) {
   const c = String(code || "").trim();
 
+  const renderBullets = (title, arr) => {
+    const items = Array.isArray(arr) ? arr.map((x) => String(x || "").trim()).filter(Boolean) : [];
+    if (!items.length) return "";
+    return `
+      <div class="lawCardSection">
+        <div class="lawCardSectionTitle">${escapeHtml(title)}</div>
+        <ul class="lawCardList">
+          ${items.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}
+        </ul>
+      </div>
+    `;
+  };
+
+  const renderTags = (tags) => {
+    const t = Array.isArray(tags) ? tags.map((x) => String(x || "").trim()).filter(Boolean) : [];
+    if (!t.length) return "";
+    return `
+      <div class="lawCardTags">
+        ${t.slice(0, 12).map((x) => `<span class="lawTag">${escapeHtml(x)}</span>`).join("")}
+      </div>
+    `;
+  };
+
   if (!payload) {
     return `
       <div class="lawCard">
@@ -353,7 +396,16 @@ function renderLawCardHtml(code, payload) {
   const ref = payload.data || {};
   const urlHtml = ref.url
     ? `<div class="lawCardLink"><a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener">법령 링크 열기</a></div>`
+    : ref.display_mode === "placeholder_link"
+    ? `<div class="lawCardLink lawCardLink--placeholder">링크 준비중</div>`
     : "";
+
+  const sourceHint = ref?.source?.article_hint ? String(ref.source.article_hint).trim() : "";
+  const sourceProvider = ref?.source?.provider ? String(ref.source.provider).trim() : "";
+  const sourceMeta =
+    sourceHint || sourceProvider
+      ? `<div class="lawCardSource">${escapeHtml([sourceProvider, sourceHint].filter(Boolean).join(" · "))}</div>`
+      : "";
 
   return `
     <div class="lawCard">
@@ -361,8 +413,17 @@ function renderLawCardHtml(code, payload) {
         <div class="lawCardTitle">${escapeHtml(c)} · ${escapeHtml(ref.title || "")}</div>
         <div class="lawCardDate">${escapeHtml(ref.updated_at || "")}</div>
       </div>
+
       <div class="lawCardMeta">${escapeHtml(ref.law_name || "")} ${escapeHtml(ref.article || "")}</div>
-      <div class="lawCardSummary">${escapeHtml(ref.summary || "")}</div>
+      ${sourceMeta}
+
+      ${ref.summary ? `<div class="lawCardSummary">${escapeHtml(ref.summary || "")}</div>` : ""}
+
+      ${renderTags(ref.tags)}
+
+      ${renderBullets("실무 노트", ref.practical_notes)}
+      ${renderBullets("설계 체크포인트", ref.designer_checkpoints)}
+
       ${urlHtml}
     </div>
   `;
@@ -432,6 +493,9 @@ function clearMissingMarks(checklistId) {
     const hint = document.getElementById(hintId);
     if (hint) hint.remove();
   });
+
+  // ✅ 아이템 단위 플래그도 해제
+  setItemMissingFlag(checklistId, false);
 }
 
 function markMissingInputs(checklistId, missingInputs) {
@@ -445,9 +509,7 @@ function markMissingInputs(checklistId, missingInputs) {
     const key = String(m?.key || "").trim();
     if (!key) return;
 
-    const inputEl = list.querySelector(
-      `input[data-checklist-id="${checklistId}"][data-input-key="${key}"]`
-    );
+    const inputEl = list.querySelector(`input[data-checklist-id="${checklistId}"][data-input-key="${key}"]`);
     if (!inputEl) return;
 
     inputEl.dataset.missing = "1";
@@ -464,6 +526,9 @@ function markMissingInputs(checklistId, missingInputs) {
 
     inputEl.insertAdjacentElement("afterend", hint);
   });
+
+  // ✅ 아이템 단위 플래그
+  setItemMissingFlag(checklistId, miss.length > 0);
 }
 
 /* =========================
@@ -517,6 +582,7 @@ function autofillChecklistInputsFromCalc({ onlyEmpty = true } = {}) {
         const hintId = `missing_hint_${checklistId}_${key}`;
         const hint = document.getElementById(hintId);
         if (hint) hint.remove();
+        recomputeItemMissingFlag(checklistId);
       }
     });
   });
@@ -598,7 +664,7 @@ function buildAppliesToHint(it) {
     const th = toNumSafe(a.min_height_m);
     const cur = getCurrentKnownValue("height_m");
     if (cur == null) needs.push("건물 높이(m)");
-    else parts.push(`높이 ≥ ${fmt(th)}m (현재: ${fmt(cur)}m)`); // eslint-disable-line
+    else parts.push(`높이 ≥ ${fmt(th)}m (현재: ${fmt(cur)}m)`);
   }
 
   if (needs.length > 0) {
@@ -791,7 +857,36 @@ function applyServerJudgeResults(results) {
     } else {
       clearMissingMarks(id);
     }
+
+    // ✅ 서버결과 기준으로 아이템 강조 플래그 동기화
+    setItemMissingFlag(id, status === "need_input" || (Array.isArray(missingInputs) && missingInputs.length > 0));
   });
+}
+
+// ✅ summary를 힌트/상태에 반영
+function applyServerSummary(summary) {
+  const s = summary || null;
+  _lastServerSummary = s;
+
+  const hint = $("judgeServerHint");
+  if (!s) return;
+
+  const st = normalizeStatus(s.status);
+  const c = s.counts || {};
+  const miss = Array.isArray(s.missing_inputs) ? s.missing_inputs : [];
+
+  const msg = [
+    `${badgeHtml(st)} 서버 종합판정: ${st.toUpperCase()}`,
+    `(${c.allow ?? 0}통과 / ${c.conditional ?? 0}추가검토 / ${c.need_input ?? 0}입력필요 / ${c.deny ?? 0}주의)`,
+    miss.length ? `· 입력 필요 키: ${miss.join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (hint) hint.innerHTML = msg;
+
+  // ✅ 헤더 렌더 기준 status 업데이트
+  _lastUseStatus = st;
 }
 
 /* =========================
@@ -820,6 +915,8 @@ async function runServerJudgeAndApply() {
       zoning: zoning || _ctx.zoning || "",
       use: use || _ctx.use || "",
       jurisdiction: _ctx.jurisdiction || "",
+      // ✅ calc 기반 파생값도 context에 같이 넣어두면(서버 mergeJudgeValues가 반영)
+      ...buildEnrichedExtraFromCalc(),
     },
     values,
   };
@@ -833,16 +930,20 @@ async function runServerJudgeAndApply() {
       body: JSON.stringify(payload),
     });
 
+    const summary = data.data?.summary || null;
     const results = data.data?.results || [];
+
     applyServerJudgeResults(results);
+    applyServerSummary(summary);
 
     const miss = data.meta?.missing_refs || [];
     if (judgeServerHint) {
-      judgeServerHint.textContent =
-        `✅ 서버 판정 완료 (${results.length}개)` + (miss.length ? ` · laws.json 미등록 refs: ${miss.join(", ")}` : "");
+      const base = judgeServerHint.innerHTML || judgeServerHint.textContent || "";
+      judgeServerHint.innerHTML =
+        `${base}` + (miss.length ? ` <span class="inlineDim">· laws.json 미등록 refs: ${escapeHtml(miss.join(", "))}</span>` : "");
     }
 
-    return { ok: true, results, meta: data.meta || null };
+    return { ok: true, summary, results, meta: data.meta || null };
   } catch (e) {
     if (judgeServerHint) judgeServerHint.textContent = `❌ 서버 판정 실패: ${String(e)}`;
     return { ok: false, reason: "server_error" };
@@ -865,7 +966,9 @@ function renderChecklist(items, opts = {}) {
   const list = $("checklistList");
   if (!card || !list) return;
 
-  const status = normalizeStatus(opts.status || "");
+  // ✅ 서버 summary가 있으면 그걸 우선 사용(헤더는 "최종판정"이 더 정확함)
+  const preferred = normalizeStatus(_lastServerSummary?.status || "");
+  const status = preferred !== "unknown" ? preferred : normalizeStatus(opts.status || "");
 
   _renderedChecklist = Array.isArray(items) ? items : [];
   _currentChecklistItems = _renderedChecklist;
@@ -890,7 +993,7 @@ function renderChecklist(items, opts = {}) {
       : status === "conditional"
       ? "⚠️ 조건부 체크리스트(추가 검토 필요)"
       : status === "deny"
-      ? "❌ 불가 판정이지만, 원인 점검용 체크리스트"
+      ? "❌ 불가/주의 판정이지만, 원인 점검용 체크리스트"
       : status === "need_input"
       ? "❓ 입력이 필요한 체크리스트"
       : "🧾 체크리스트";
@@ -901,7 +1004,7 @@ function renderChecklist(items, opts = {}) {
       : status === "conditional"
       ? "조건부로 판정되었어요. 아래 항목을 입력/검토하면 결론이 더 명확해집니다."
       : status === "deny"
-      ? "불가로 나왔지만, 어떤 규제가 걸리는지 빠르게 확인해요."
+      ? "주의/불가로 나왔어요. 어떤 규제가 걸리는지 빠르게 확인해요."
       : status === "need_input"
       ? "입력값이 부족해요. 아래 항목을 입력하면 서버가 자동으로 판정해줘요."
       : "항목을 입력하면 자동/서버 판정이 반영됩니다.";
@@ -930,9 +1033,7 @@ function renderChecklist(items, opts = {}) {
       const inputs = Array.isArray(it.inputs) ? it.inputs : [];
 
       const appliesHint = buildAppliesToHint(it);
-      const appliesHtml = appliesHint
-        ? `<div class="clAppliesTo">🔎 ${escapeHtml(appliesHint)}</div>`
-        : "";
+      const appliesHtml = appliesHint ? `<div class="clAppliesTo">🔎 ${escapeHtml(appliesHint)}</div>` : "";
 
       const inputHtml = inputs
         .map((inp) => {
@@ -977,8 +1078,11 @@ function renderChecklist(items, opts = {}) {
         })
         .join("");
 
+      const initialMissing = Array.isArray(it.missing_inputs) ? it.missing_inputs : [];
+      const hasMissing = initialMissing.length > 0 ? "1" : "0";
+
       return `
-        <div class="clItem">
+        <div class="clItem" id="cl_${escapeHtml(it.id)}" data-has-missing="${hasMissing}">
           <div class="clItemTop">
             <div class="clItemTitle">□ ${escapeHtml(it.title)}</div>
             <div id="judge_${escapeHtml(it.id)}" class="clJudge" data-title="${escapeHtml(it.title)}"></div>
@@ -1057,6 +1161,17 @@ function renderChecklist(items, opts = {}) {
       const checklistId = el.getAttribute("data-checklist-id");
       if (!checklistId) return;
 
+      // 사용자가 입력하면 해당 입력의 missing 표시를 즉시 해제
+      const cur = String(el.value ?? "").trim();
+      if (cur) {
+        delete el.dataset.missing;
+        const key = el.getAttribute("data-input-key") || "";
+        const hintId = `missing_hint_${checklistId}_${key}`;
+        const hint = document.getElementById(hintId);
+        if (hint) hint.remove();
+      }
+      recomputeItemMissingFlag(checklistId);
+
       const inputEls = list.querySelectorAll(`input[data-checklist-id="${checklistId}"]`);
 
       const values = {};
@@ -1084,6 +1199,7 @@ function renderChecklist(items, opts = {}) {
     });
   }
 
+  // 초기 server_judge / missing_inputs 반영
   items.forEach((it) => {
     const id = it.id;
     const judgeEl = $(`judge_${id}`);
@@ -1098,6 +1214,7 @@ function renderChecklist(items, opts = {}) {
 
     const miss = it.missing_inputs || [];
     if (miss.length) markMissingInputs(id, miss);
+    else setItemMissingFlag(id, false);
   });
 
   try {
@@ -1150,9 +1267,9 @@ async function runCalc() {
     return;
   }
 
-  const url = `/api/calc?site=${encodeURIComponent(landArea)}&coverage=${encodeURIComponent(
-    bcr
-  )}&far=${encodeURIComponent(far)}&floor=${encodeURIComponent(floorHeight)}`;
+  const url = `/api/calc?site=${encodeURIComponent(landArea)}&coverage=${encodeURIComponent(bcr)}&far=${encodeURIComponent(
+    far
+  )}&floor=${encodeURIComponent(floorHeight)}`;
 
   resultEl.innerHTML = "계산 중...";
 
@@ -1221,6 +1338,7 @@ function resetAll() {
 
   lastCalcResult = null;
   _lastUseStatus = "";
+  _lastServerSummary = null;
 
   const resultEl = $("result");
   const talkEl = $("talkTrack");
@@ -1316,6 +1434,8 @@ function buildSummaryText() {
   const useState = use ? "guess" : "unsure";
   const calcState = lastCalcResult?.result ? "sure" : "unsure";
 
+  const serverFinal = normalizeStatus(_lastServerSummary?.status || _lastUseStatus || "");
+
   function readChecklistSummary() {
     const card = $("checklistCard");
     const list = $("checklistList");
@@ -1409,6 +1529,7 @@ function buildSummaryText() {
     `- 지자체(추정): ${_ctx.jurisdiction || "(미확정)"} ${badgeText(jurisdictionState)}`,
     `- 용도지역(간이): ${zoning || "(미선택)"} ${badgeText(zoningState)}`,
     `- 용도(간이): ${usePretty || "(미선택)"} ${badgeText(useState)}`,
+    serverFinal ? `- 서버 최종판정: ${serverFinal.toUpperCase()}` : `- 서버 최종판정: (미실행)`,
     `- 기본 산정: ${badgeText(calcState)}`,
     `- 대지면적: ${landArea || "-"} ㎡`,
     `- 건폐율(입력/상한): ${bcr || "-"} %`,
@@ -1481,7 +1602,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const u = (useSelect?.value || "").trim();
     if (u) {
-      // 용도가 이미 선택된 상태면 바로 판정+체크리스트 갱신
       debouncedAutoUseCheck();
     }
   });
@@ -1658,14 +1778,15 @@ window.addEventListener("DOMContentLoaded", () => {
           <div class="useRow">용도지역: ${escapeHtml(data.zoning)}</div>
           <div class="useRow">용도: ${escapeHtml(useLabel)} (${escapeHtml(u)})</div>
           ${
-            _ctx.jurisdiction
-              ? `<div class="useRow">지자체(추정): ${escapeHtml(_ctx.jurisdiction)}</div>`
-              : ""
+            _ctx.jurisdiction ? `<div class="useRow">지자체(추정): ${escapeHtml(_ctx.jurisdiction)}</div>` : ""
           }
         `
       );
 
       await refreshChecklistByContext({ zoning: z, use: u, status: data.status });
+
+      // ✅ 체크리스트가 렌더된 후 서버 요약을 1회 더 맞춰주기(헤더/힌트 안정화)
+      await runServerJudgeAndApply();
     } catch (e) {
       setText(useResult, `❌ 용도 판단 실패: ${escapeHtml(String(e))}`);
       renderChecklist([]);

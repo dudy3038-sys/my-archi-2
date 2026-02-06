@@ -1,5 +1,6 @@
 {
   "BLD-ACT-44": {
+    "id": "BLD-ACT-44",
     "title": "도로 접도 조건",
     "law_name": "건축법",
     "article": "제44조",
@@ -14,6 +15,23 @@
       "jurisdiction": "KR",
       "article_hint": "건축법 제44조(대지와 도로)"
     },
+    "citations": [
+      {
+        "provider": "law.go.kr",
+        "type": "statute",
+        "ref": "건축법 제44조(대지와 도로)",
+        "accessed_at": "2026-02-05",
+        "note": "url은 추후 확정 입력(현재 placeholder_link)"
+      }
+    ],
+    "scope": {
+      "applies_to": ["대지", "신축", "증축", "개축"],
+      "exceptions": ["현황도로 인정/확폭계획/사도·비법정도로 여부 등 지자체 해석·조례·지구단위계획 영향"]
+    },
+    "reliability": {
+      "level": "needs_confirmation",
+      "reasons": ["현황/폭/종류의 판단이 지자체 판단 요소로 크게 작용"]
+    },
     "practical_notes": [
       "도로 폭 부족 시 건축선 후퇴로 해결 가능한지 검토",
       "현황도로 인정 여부는 지자체 판단 사항",
@@ -24,9 +42,15 @@
       "대지 전면이 도로에 실제 접하는지",
       "도로 폭 측정 기준(유효폭 vs 현황폭)",
       "확폭 예정 도로 여부"
-    ]
+    ],
+    "related": {
+      "laws": ["BLD-ACT-61", "FIRE-REG-05"],
+      "checklists": ["SITE_ACCESS", "SETBACK_BUILDING_LINE"]
+    }
   },
+
   "PARK-ORD-01": {
+    "id": "PARK-ORD-01",
     "title": "주차대수 산정",
     "law_name": "주차장법 및 지자체 조례",
     "article": "조례 별표 기준",
@@ -38,7 +62,25 @@
     "source": {
       "provider": "local_ordinance",
       "type": "bylaw",
-      "jurisdiction": "KR"
+      "jurisdiction": "KR",
+      "article_hint": "지자체 주차장 조례(부설주차장 설치기준) 별표"
+    },
+    "citations": [
+      {
+        "provider": "local_ordinance",
+        "type": "bylaw",
+        "ref": "해당 지자체 주차장 조례 별표(부설주차장 설치기준)",
+        "accessed_at": "2026-02-05",
+        "note": "지자체마다 기준이 달라 url은 지자체 선택 후 확정"
+      }
+    ],
+    "scope": {
+      "applies_to": ["부설주차장", "신축", "용도변경"],
+      "exceptions": ["완화/대체납부/공유주차/기계식 허용 여부 등 조례 특례 가능"]
+    },
+    "reliability": {
+      "level": "jurisdiction_dependent",
+      "reasons": ["지자체 조례가 핵심(기준·완화·기계식·입지제한 등 상이)"]
     },
     "practical_notes": [
       "주차는 법령보다 조례 영향이 더 큼",
@@ -49,9 +91,15 @@
       "용도별 주차대수 산정 기준 적용",
       "장애인 주차면 포함 여부",
       "부설주차장 설치 위치 제한"
-    ]
+    ],
+    "related": {
+      "laws": [],
+      "checklists": ["PARKING_COUNT", "PARKING_LAYOUT"]
+    }
   },
+
   "BLD-ACT-61": {
+    "id": "BLD-ACT-61",
     "title": "일조 관련 제한",
     "law_name": "건축법 및 관련 고시/조례",
     "article": "제61조 등",
@@ -63,7 +111,25 @@
     "source": {
       "provider": "law.go.kr",
       "type": "statute_plus",
-      "jurisdiction": "KR"
+      "jurisdiction": "KR",
+      "article_hint": "건축법(일조 등 확보를 위한 건축물의 높이제한) + 시행령/고시/조례 연계"
+    },
+    "citations": [
+      {
+        "provider": "law.go.kr",
+        "type": "statute",
+        "ref": "건축법 제61조(일조 등의 확보를 위한 건축물의 높이 제한)",
+        "accessed_at": "2026-02-05",
+        "note": "세부 산식/예외는 시행령·고시·지자체 기준을 함께 확인"
+      }
+    ],
+    "scope": {
+      "applies_to": ["주거지역", "인접대지", "높이/이격 검토"],
+      "exceptions": ["지구단위계획/특정구역/별도 고시 기준 우선 가능"]
+    },
+    "reliability": {
+      "level": "needs_context",
+      "reasons": ["대지 형상·방위·인접 조건에 따라 적용 산식/판정이 달라짐"]
     },
     "practical_notes": [
       "도로 사선·인접대지 사선이 중첩 적용될 수 있음",
@@ -74,9 +140,15 @@
       "대지 경계에서의 이격 거리 확인",
       "일조권 사선 적용 시작 높이",
       "지구단위계획에서 별도 높이 제한 존재 여부"
-    ]
+    ],
+    "related": {
+      "laws": ["BLD-ACT-44"],
+      "checklists": ["DAYLIGHT_SETBACK", "HEIGHT_LIMITS"]
+    }
   },
+
   "FIRE-REG-05": {
+    "id": "FIRE-REG-05",
     "title": "피난/방화 기준 강화 조건",
     "law_name": "건축물의 피난·방화구조 등의 기준에 관한 규칙",
     "article": "관련 조항",
@@ -88,7 +160,25 @@
     "source": {
       "provider": "law.go.kr",
       "type": "regulation",
-      "jurisdiction": "KR"
+      "jurisdiction": "KR",
+      "article_hint": "건축물의 피난·방화구조 등의 기준에 관한 규칙(관련 조항 묶음)"
+    },
+    "citations": [
+      {
+        "provider": "law.go.kr",
+        "type": "regulation",
+        "ref": "건축물의 피난·방화구조 등의 기준에 관한 규칙(해당 용도/층수/면적 관련 조항)",
+        "accessed_at": "2026-02-05",
+        "note": "단일 조문이 아니라 조건별로 참조 조항이 달라질 수 있음"
+      }
+    ],
+    "scope": {
+      "applies_to": ["피난계단", "방화구획", "내화구조", "층수/연면적 임계"],
+      "exceptions": ["복합용도/특정용도는 추가 기준(소방/피난) 연계 필요"]
+    },
+    "reliability": {
+      "level": "needs_inputs",
+      "reasons": ["층수·연면적·용도 조합 입력이 있어야 정확 판정 가능"]
     },
     "practical_notes": [
       "특별피난계단 적용 기준은 층수+용도 조합",
@@ -99,6 +189,10 @@
       "직통계단 개수",
       "피난거리 계산",
       "방화구획 면적 기준"
-    ]
+    ],
+    "related": {
+      "laws": ["BLD-ACT-61"],
+      "checklists": ["EGRESS_STAIRS", "FIRE_COMPARTMENT", "FIRE_RESISTANCE"]
+    }
   }
 }
