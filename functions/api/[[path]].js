@@ -13,7 +13,8 @@ export async function onRequest(context) {
       ? params.path.split("/").filter(Boolean)
       : [];
 
-  const pathname = new URL(request.url).pathname; // e.g. /api/geocode
+  const urlObj = new URL(request.url);
+  const pathname = urlObj.pathname; // e.g. /api/geocode
   const method = request.method.toUpperCase();
 
   try {
@@ -28,6 +29,11 @@ export async function onRequest(context) {
           "cache-control": "no-store",
         },
       });
+
+    const isTrue = (v) => {
+      const s = String(v ?? "").trim().toLowerCase();
+      return s === "1" || s === "true" || s === "yes" || s === "on";
+    };
 
     // ✅ JSON body reader (안정/에러 구분)
     const readJson = async () => {
@@ -55,6 +61,11 @@ export async function onRequest(context) {
     };
 
     const notFound = (msg = "not_found") => json({ ok: false, error: msg, path: pathname }, 404);
+
+    // ✅ 디버그 토글 통일:
+    // - Cloudflare에 DEBUG=true 넣으면 디버그 출력
+    // - (구버전 호환) DEBUG_VWORLD=true 도 인정
+    const DEBUG_ON = isTrue(env?.DEBUG) || isTrue(env?.DEBUG_VWORLD);
 
     /* =========================
        loaders
@@ -211,12 +222,6 @@ export async function onRequest(context) {
       return missing;
     };
 
-    /**
-     * ✅ 핵심 변경:
-     * - rule_engine 정책에 맞춰 need_input 강제는 기본 OFF
-     * - (입력 누락이어도) 기본은 conditional로 안내하고,
-     *   rule_engine이 명시적으로 need_input을 쓰는 경우에만 need_input이 나오게 한다.
-     */
     const judgeOneItem = (checkItem, engineItem, values, { forceNeedInputOnMissing = false } = {}) => {
       const ruleSet = engineItem?.rule_set || {};
       const defaultResult = normalizeStatus(ruleSet.default_result || "conditional");
@@ -227,19 +232,14 @@ export async function onRequest(context) {
 
       const hit = evaluateAutoRules(engineItem, values);
 
-      // 결과 결정:
-      // - auto_rules hit가 있으면 그 결과 사용
-      // - 없으면 rule_set default 사용
       let status = hit?.result ? normalizeStatus(hit.result) : defaultResult;
       let message = hit?.message ? String(hit.message).trim() : defaultMessage;
 
-      // (옵션) 강제 need_input: 특별히 쓰고 싶을 때만
       if (forceNeedInputOnMissing && missing_inputs.length > 0 && status !== "deny") {
         status = "need_input";
         if (!message) message = "❓ 입력이 필요합니다.";
       }
 
-      // 데이터 실수 방어
       if (status === "need_input" && missing_inputs.length === 0) {
         status = "conditional";
         message = message || defaultMessage;
@@ -266,7 +266,6 @@ export async function onRequest(context) {
       const a = item?.applies_to;
       if (!a) return true;
 
-      // 문자열 컨텍스트
       if (Array.isArray(a.zoning_in) && a.zoning_in.length > 0) {
         if (!includesStr(a.zoning_in, ctx.zoning)) return false;
       }
@@ -277,7 +276,6 @@ export async function onRequest(context) {
         if (!includesStr(a.jurisdiction_in, ctx.jurisdiction)) return false;
       }
 
-      // 숫자 조건
       const curArea = toNum(ctx.gross_area_m2);
       const curFloors = toNum(ctx.floors);
       const curHeight = toNum(ctx.height_m);
@@ -285,7 +283,7 @@ export async function onRequest(context) {
       if (a.min_gross_area_m2 != null) {
         const th = toNum(a.min_gross_area_m2);
         if (th != null) {
-          if (curArea == null) return true; // 값 없으면 표시(입력 유도)
+          if (curArea == null) return true;
           if (curArea < th) return false;
         }
       }
@@ -310,12 +308,10 @@ export async function onRequest(context) {
     const mergeJudgeValues = (ctx, values) => {
       const merged = { ...(values || {}) };
 
-      // context 문자열
       if (ctx?.zoning && merged.zoning === undefined) merged.zoning = String(ctx.zoning).trim();
       if (ctx?.use && merged.use === undefined) merged.use = String(ctx.use).trim();
       if (ctx?.jurisdiction && merged.jurisdiction === undefined) merged.jurisdiction = String(ctx.jurisdiction).trim();
 
-      // context 숫자
       const floors = toNum(ctx?.floors);
       const height_m = toNum(ctx?.height_m);
       const gross_area_m2 = toNum(ctx?.gross_area_m2);
@@ -343,9 +339,6 @@ export async function onRequest(context) {
         });
       }
 
-      // 전체 status 우선순위:
-      // deny > need_input > conditional > allow > unknown
-      // (need_input은 정책상 최소화되지만, 엔진이 명시할 수도 있으니 남겨둠)
       let status = "unknown";
       if (counts.deny > 0) status = "deny";
       else if (counts.need_input > 0) status = "need_input";
@@ -397,7 +390,6 @@ export async function onRequest(context) {
       const q = (url.searchParams.get("q") || "").trim();
       if (!q) return json({ ok: false, error: "missing_q" }, 400);
 
-      // Nominatim (OSM) — User-Agent required
       const nomUrl = new URL("https://nominatim.openstreetmap.org/search");
       nomUrl.searchParams.set("q", q);
       nomUrl.searchParams.set("format", "json");
@@ -463,7 +455,7 @@ export async function onRequest(context) {
     }
 
     /* =========================
-       VWorld helpers (그대로 유지)
+       VWorld helpers
     ========================= */
 
     const pickFirstZoningName = (feature) => {
@@ -483,6 +475,13 @@ export async function onRequest(context) {
       return cand ? String(cand).trim() : "";
     };
 
+    // ✅ domain을 env에 안 넣어도, 현재 요청 host로 자동 세팅(Preview/Production 모두 대응)
+    const getVworldDomainParam = () => {
+      const explicit = env?.VWORLD_DOMAIN || env?.V_WORLD_DOMAIN || env?.VWORLD_KEY_DOMAIN;
+      if (explicit && String(explicit).trim()) return String(explicit).trim();
+      return urlObj.host; // e.g. d976c0ff.my-archi-2.pages.dev OR my-archi-2.pages.dev
+    };
+
     const vworldGetFeatureAtPoint = async ({ lon, lat, dataId, columns }) => {
       const key = env?.VWORLD_KEY || env?.V_WORLD_KEY || env?.VWORLD_API_KEY;
       if (!key) return { ok: false, error: "missing_vworld_key" };
@@ -494,7 +493,8 @@ export async function onRequest(context) {
       u.searchParams.set("format", "json");
       u.searchParams.set("key", key);
 
-      const domain = env?.VWORLD_DOMAIN || env?.V_WORLD_DOMAIN || env?.VWORLD_KEY_DOMAIN;
+      // ✅ domain 파라미터(도메인 제한 키 대응)
+      const domain = getVworldDomainParam();
       if (domain) u.searchParams.set("domain", domain);
 
       u.searchParams.set("data", dataId);
@@ -510,12 +510,25 @@ export async function onRequest(context) {
       u.searchParams.set("crs", "EPSG:4326");
       if (columns) u.searchParams.set("columns", columns);
 
-      const r = await fetch(u.toString(), {
-        headers: {
-          accept: "application/json",
-          "user-agent": "my-archi-2 (Cloudflare Pages Functions)",
-        },
-      });
+      // ✅ 타임아웃(지연/헛응답 방지)
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort("timeout"), Number(env?.VWORLD_TIMEOUT_MS || 8000));
+      let r;
+      try {
+        r = await fetch(u.toString(), {
+          signal: ac.signal,
+          headers: {
+            accept: "application/json",
+            "accept-language": "ko-KR,ko;q=0.9,en;q=0.8",
+            "user-agent": "my-archi-2 (Cloudflare Pages Functions)",
+          },
+        });
+      } catch (e) {
+        clearTimeout(t);
+        return { ok: false, error: "vworld_fetch_failed", detail: String(e?.message || e) };
+      } finally {
+        clearTimeout(t);
+      }
 
       const rawText = await r.text().catch(() => "");
       let parsed = null;
@@ -531,6 +544,7 @@ export async function onRequest(context) {
           error: "vworld_http_error",
           status: r.status,
           detail: parsed || rawText || null,
+          request_url: DEBUG_ON ? u.toString() : undefined, // ✅ 디버그일 때만 노출
         };
       }
 
@@ -600,13 +614,14 @@ export async function onRequest(context) {
           found: false,
           zoning: "",
           note: "VWORLD_KEY 환경변수가 없어 자동 조회를 건너뛰었습니다. (수동 선택 가능)",
+          debug: DEBUG_ON ? { envKeysTried: ["VWORLD_KEY", "V_WORLD_KEY", "VWORLD_API_KEY"] } : undefined,
         });
       }
 
       const base = await loadBaseRules();
       const baseArr = getZoningRulesArray(base);
 
-      const datasets = String(env?.VWORLD_ZONING_DATASETS || "LT_C_UQ111")
+      const datasets = String(env?.VWORLD_ZONING_DATASETS || "LT_C_UQ111,LT_C_UQ112,LT_C_UQ113")
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
@@ -643,10 +658,17 @@ export async function onRequest(context) {
             source: { provider: "vworld", data: dataId },
             raw_name: mapped.raw_name,
             note: "좌표 기반 자동 조회 결과(정규화 매칭)입니다. 실제 적용은 지구단위/조례 등 추가 검토 필요.",
+            debug: DEBUG_ON
+              ? {
+                  domain_param_used: getVworldDomainParam(),
+                  normalized: mapped.normalized,
+                  tried,
+                }
+              : undefined,
           });
         }
 
-        const tryAll = String(env?.VWORLD_TRY_ALL_DATASETS || "").toLowerCase() === "true";
+        const tryAll = isTrue(env?.VWORLD_TRY_ALL_DATASETS);
         if (!tryAll) {
           return json({
             ok: true,
@@ -658,8 +680,11 @@ export async function onRequest(context) {
             candidates: mapped.candidates || [],
             note:
               "V월드에서 명칭은 찾았지만 base_rules.json의 용도지역명과 매칭되지 않아 자동 설정을 중단했습니다. (수동 선택 가능)",
-            debug: env?.DEBUG_VWORLD
-              ? { hint: "base_rules.json의 zoning 문자열과 VWorld 반환 문자열(공백/괄호/표기)이 다를 수 있어요." }
+            debug: DEBUG_ON
+              ? {
+                  hint: "base_rules.json의 zoning 문자열과 VWorld 반환 문자열(공백/괄호/표기)이 다를 수 있어요.",
+                  domain_param_used: getVworldDomainParam(),
+                }
               : undefined,
           });
         }
@@ -671,8 +696,8 @@ export async function onRequest(context) {
         zoning: "",
         source: { provider: "vworld", tried },
         note:
-          "V월드 조회는 됐지만 해당 좌표에서 용도지역 명칭을 추출하지 못했습니다. (데이터셋/필드명이 다를 수 있어요)",
-        debug: env?.DEBUG_VWORLD ? { lastError } : undefined,
+          "V월드 조회는 했지만 해당 좌표에서 용도지역 명칭을 추출하지 못했습니다. (데이터셋/필드명이 다를 수 있어요)",
+        debug: DEBUG_ON ? { lastError, domain_param_used: getVworldDomainParam() } : undefined,
       });
     }
 
@@ -748,13 +773,7 @@ export async function onRequest(context) {
       return json({ ok: true, zoning, use, status, message });
     }
 
-    /* =========================
-       ✅ /api/checklists/enriched
-       - applies_to 필터링
-       - rule_engine merge
-       - server_judge 사전 부착
-       - need_input 강제 X (정책: 최소화)
-    ========================= */
+    // ---------- route: /api/checklists/enriched ----------
     if (segs[0] === "checklists" && segs[1] === "enriched" && method === "GET") {
       const url = new URL(request.url);
       const zoning = (url.searchParams.get("zoning") || "").trim();
@@ -773,7 +792,6 @@ export async function onRequest(context) {
       const engineItems = Array.isArray(engine?.default_conditional) ? engine.default_conditional : [];
       const engineById = new Map(engineItems.map((x) => [String(x?.id || ""), x]).filter(([k]) => k));
 
-      // judge에 쓰일 values: 쿼리스트링 값만(프론트가 calc 값을 넘겨줌)
       const values = {
         floors: floors ?? undefined,
         height_m: height_m ?? undefined,
@@ -786,7 +804,6 @@ export async function onRequest(context) {
           const id = String(it?.id || "");
           const eng = engineById.get(id) || null;
 
-          // rule_engine에 없는 항목도 최소한 default judge를 달아줌
           const fallbackEngine = eng || {
             id,
             rule_set: { default_result: "conditional", default_message: "⚠️ 추가 검토가 필요합니다." },
@@ -798,7 +815,6 @@ export async function onRequest(context) {
 
           return {
             ...it,
-            // server_judge는 프론트가 초기 배지 표시하는데 사용
             server_judge: { result: judged.status, message: judged.message, rule_id: judged.judge?.rule_id || null },
             missing_inputs: judged.missing_inputs || [],
           };
@@ -817,15 +833,7 @@ export async function onRequest(context) {
       });
     }
 
-    /* =========================
-       ✅ /api/checklists/judge (고도화)
-       - applies_to 필터링 적용 (ctx + values 보강)
-       - context -> values merge (zoning/use/jurisdiction/floors/height/gross_area)
-       - 결과 스키마 정리 + summary(total/note) 포함
-       - laws.json 미등록 refs 수집(meta.missing_refs)
-       - invalid_json 400 처리
-       - need_input 강제 X (정책: 최소화)
-    ========================= */
+    // ---------- route: /api/checklists/judge ----------
     if (segs[0] === "checklists" && segs[1] === "judge" && method === "POST") {
       const body = await readJson();
       if (body && body.__invalid_json) {
@@ -844,10 +852,8 @@ export async function onRequest(context) {
       const engineItems = Array.isArray(engine?.default_conditional) ? engine.default_conditional : [];
       const engineById = new Map(engineItems.map((x) => [String(x?.id || ""), x]).filter(([k]) => k));
 
-      // ✅ 판정용 values (context 파생 포함)
       const values = mergeJudgeValues(ctx, rawValues);
 
-      // ✅ applies_to 필터링 정확도 보강
       const ctxForFilter = { ...(ctx || {}) };
       if (toNum(ctxForFilter.floors) == null && toNum(values.floors) != null) ctxForFilter.floors = toNum(values.floors);
       if (toNum(ctxForFilter.height_m) == null && toNum(values.height_m) != null)
@@ -871,7 +877,6 @@ export async function onRequest(context) {
           auto_rules: [],
         };
 
-        // refs 누락 수집
         const refs = Array.isArray(it?.refs) ? it.refs : [];
         refs.forEach((c) => {
           const code = String(c || "").trim();
@@ -888,7 +893,7 @@ export async function onRequest(context) {
           missing_inputs: judged.missing_inputs || [],
           matched_rule_id: judged.judge?.rule_id || null,
           priority: judged.judge?.priority ?? 0,
-          judge: judged.judge, // 디버깅/추적용(원하면 나중에 제거 가능)
+          judge: judged.judge,
         };
       });
 
