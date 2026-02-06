@@ -455,7 +455,7 @@ export async function onRequest(context) {
     }
 
     /* =========================
-       VWorld helpers
+       VWorld helpers (WMS GetFeatureInfo 정석)
     ========================= */
 
     const pickFirstZoningName = (feature) => {
@@ -482,37 +482,66 @@ export async function onRequest(context) {
       return urlObj.host; // e.g. d976c0ff.my-archi-2.pages.dev OR my-archi-2.pages.dev
     };
 
-    const vworldGetFeatureAtPoint = async ({ lon, lat, dataId, columns }) => {
+    // meters -> degrees(대략)
+    const metersToDegLat = (m) => m / 111320;
+    const metersToDegLon = (m, lat) => m / (111320 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+
+    const vworldWmsGetFeatureInfoAtPoint = async ({ lon, lat, layer }) => {
       const key = env?.VWORLD_KEY || env?.V_WORLD_KEY || env?.VWORLD_API_KEY;
       if (!key) return { ok: false, error: "missing_vworld_key" };
 
-      const u = new URL("https://api.vworld.kr/req/data");
-      u.searchParams.set("service", "data");
-      u.searchParams.set("version", "2.0");
-      u.searchParams.set("request", "GetFeature");
-      u.searchParams.set("format", "json");
+      // layer는 WMS 규칙상 소문자 권장
+      const lyr = String(layer || "").trim();
+      if (!lyr) return { ok: false, error: "missing_layer" };
+
+      // BBOX는 buffer(m) 기반으로 만들어 GetFeatureInfo 찍기
+      const bufM = Number(env?.VWORLD_BUFFER_M ?? 50);
+      const safeBufM = Number.isFinite(bufM) && bufM > 0 ? bufM : 50;
+
+      const dLat = metersToDegLat(safeBufM);
+      const dLon = metersToDegLon(safeBufM, lat);
+
+      const minx = lon - dLon;
+      const maxx = lon + dLon;
+      const miny = lat - dLat;
+      const maxy = lat + dLat;
+
+      // 화면 크기(임의)와 클릭 픽셀(중앙)
+      const WIDTH = 101;
+      const HEIGHT = 101;
+      const I = Math.floor(WIDTH / 2);
+      const J = Math.floor(HEIGHT / 2);
+
+      const u = new URL("https://api.vworld.kr/req/wms");
+      u.searchParams.set("service", "WMS");
+      u.searchParams.set("request", "GetFeatureInfo");
+      u.searchParams.set("version", "1.3.0");
       u.searchParams.set("key", key);
 
       // ✅ domain 파라미터(도메인 제한 키 대응)
       const domain = getVworldDomainParam();
       if (domain) u.searchParams.set("domain", domain);
 
-      u.searchParams.set("data", dataId);
-      u.searchParams.set("geomFilter", `POINT(${lon} ${lat})`);
-      u.searchParams.set("size", "10");
-      u.searchParams.set("page", "1");
-      u.searchParams.set("geometry", "false");
-      u.searchParams.set("attribute", "true");
+      // 지도/레이어 설정
+      u.searchParams.set("layers", lyr);
+      u.searchParams.set("query_layers", lyr);
 
-      const buf = Number(env?.VWORLD_BUFFER_M ?? 0);
-      if (Number.isFinite(buf) && buf > 0) u.searchParams.set("buffer", String(buf));
-
+      // 좌표계 / 범위 / 화면
       u.searchParams.set("crs", "EPSG:4326");
-      if (columns) u.searchParams.set("columns", columns);
+      u.searchParams.set("bbox", `${minx},${miny},${maxx},${maxy}`);
+      u.searchParams.set("width", String(WIDTH));
+      u.searchParams.set("height", String(HEIGHT));
+      u.searchParams.set("i", String(I));
+      u.searchParams.set("j", String(J));
 
-      // ✅ 타임아웃(지연/헛응답 방지)
+      // 응답 포맷
+      u.searchParams.set("info_format", "application/json");
+      u.searchParams.set("feature_count", "10");
+
+      // ✅ 타임아웃
       const ac = new AbortController();
       const t = setTimeout(() => ac.abort("timeout"), Number(env?.VWORLD_TIMEOUT_MS || 8000));
+
       let r;
       try {
         r = await fetch(u.toString(), {
@@ -544,21 +573,20 @@ export async function onRequest(context) {
           error: "vworld_http_error",
           status: r.status,
           detail: parsed || rawText || null,
-          request_url: DEBUG_ON ? u.toString() : undefined, // ✅ 디버그일 때만 노출
+          request_url: DEBUG_ON ? u.toString() : undefined,
         };
       }
 
-      const result = parsed?.response?.result || parsed?.result || parsed;
-
+      // GetFeatureInfo JSON은 보통 GeoJSON FeatureCollection 형태
       const features =
-        result?.features ||
-        result?.featureCollection?.features ||
-        result?.geojson?.features ||
+        parsed?.features ||
+        parsed?.featureCollection?.features ||
         parsed?.response?.result?.featureCollection?.features ||
+        parsed?.response?.result?.features ||
         [];
 
       const arr = Array.isArray(features) ? features : [];
-      return { ok: true, features: arr, raw: parsed };
+      return { ok: true, features: arr, raw: parsed, request_url: DEBUG_ON ? u.toString() : undefined };
     };
 
     const stripParen = (s) => String(s || "").replace(/\([^)]*\)/g, "");
@@ -621,32 +649,34 @@ export async function onRequest(context) {
       const base = await loadBaseRules();
       const baseArr = getZoningRulesArray(base);
 
-      const datasets = String(env?.VWORLD_ZONING_DATASETS || "LT_C_UQ111,LT_C_UQ112,LT_C_UQ113")
+      // ✅ WMS 레이어는 소문자!
+      const layers = String(env?.VWORLD_ZONING_LAYERS || "lt_c_uq111,lt_c_uq112,lt_c_uq113")
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
 
       const tried = [];
       let lastError = null;
+      let lastRequestUrl = null;
 
-      for (const dataId of datasets) {
-        tried.push(dataId);
+      for (const layer of layers) {
+        tried.push(layer);
 
-        const res = await vworldGetFeatureAtPoint({
-          lon,
-          lat,
-          dataId,
-          columns: env?.VWORLD_COLUMNS ? String(env.VWORLD_COLUMNS) : "",
-        });
+        const res = await vworldWmsGetFeatureInfoAtPoint({ lon, lat, layer });
 
         if (!res.ok) {
           lastError = res;
           continue;
         }
 
+        lastRequestUrl = res.request_url || lastRequestUrl;
+
         const first = res.features?.[0] || null;
         const rawName = pickFirstZoningName(first);
-        if (!rawName) continue;
+        if (!rawName) {
+          // features가 있는데 필드명이 예상과 다를 수도 있으니 다음 레이어도 시도
+          continue;
+        }
 
         const mapped = resolveZoningToBase(rawName, baseArr);
 
@@ -655,14 +685,15 @@ export async function onRequest(context) {
             ok: true,
             found: true,
             zoning: mapped.zoning,
-            source: { provider: "vworld", data: dataId },
+            source: { provider: "vworld_wms", layer },
             raw_name: mapped.raw_name,
-            note: "좌표 기반 자동 조회 결과(정규화 매칭)입니다. 실제 적용은 지구단위/조례 등 추가 검토 필요.",
+            note: "좌표 기반 자동 조회 결과(WMS GetFeatureInfo + 정규화 매칭)입니다. 실제 적용은 지구단위/조례 등 추가 검토 필요.",
             debug: DEBUG_ON
               ? {
                   domain_param_used: getVworldDomainParam(),
                   normalized: mapped.normalized,
                   tried,
+                  request_url: lastRequestUrl,
                 }
               : undefined,
           });
@@ -674,16 +705,17 @@ export async function onRequest(context) {
             ok: true,
             found: false,
             zoning: "",
-            source: { provider: "vworld", data: dataId, tried },
+            source: { provider: "vworld_wms", layer, tried },
             raw_name: mapped.raw_name,
             normalized: mapped.normalized,
             candidates: mapped.candidates || [],
             note:
-              "V월드에서 명칭은 찾았지만 base_rules.json의 용도지역명과 매칭되지 않아 자동 설정을 중단했습니다. (수동 선택 가능)",
+              "V월드(WMS)에서 명칭은 찾았지만 base_rules.json의 용도지역명과 매칭되지 않아 자동 설정을 중단했습니다. (수동 선택 가능)",
             debug: DEBUG_ON
               ? {
                   hint: "base_rules.json의 zoning 문자열과 VWorld 반환 문자열(공백/괄호/표기)이 다를 수 있어요.",
                   domain_param_used: getVworldDomainParam(),
+                  request_url: lastRequestUrl,
                 }
               : undefined,
           });
@@ -694,10 +726,10 @@ export async function onRequest(context) {
         ok: true,
         found: false,
         zoning: "",
-        source: { provider: "vworld", tried },
+        source: { provider: "vworld_wms", tried },
         note:
-          "V월드 조회는 했지만 해당 좌표에서 용도지역 명칭을 추출하지 못했습니다. (데이터셋/필드명이 다를 수 있어요)",
-        debug: DEBUG_ON ? { lastError, domain_param_used: getVworldDomainParam() } : undefined,
+          "V월드(WMS) 조회는 했지만 해당 좌표에서 용도지역 명칭을 추출하지 못했습니다. (레이어/필드명이 다를 수 있어요)",
+        debug: DEBUG_ON ? { lastError, domain_param_used: getVworldDomainParam(), request_url: lastRequestUrl } : undefined,
       });
     }
 
